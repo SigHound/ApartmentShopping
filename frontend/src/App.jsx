@@ -2699,6 +2699,47 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
     setDistances(distMap);
   }, [apartment, criteria, pois]);
 
+  const [autoDistances, setAutoDistances] = useState({});
+
+  useEffect(() => {
+    if (!address || address.length < 5) {
+      setAutoDistances({});
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+        if (!coords) return;
+        
+        const estimates = {};
+        await Promise.all(pois.map(async (poi) => {
+          let route = await clientCalculateRoute(coords.lon, coords.lat, poi.longitude, poi.latitude);
+          if (route) {
+            estimates[poi.id] = {
+              normal_time_mins: route.normal_time_mins,
+              rush_hour_time_mins: route.rush_hour_time_mins,
+              distance_miles: route.distance_miles
+            };
+          } else {
+            const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
+            const normal = Math.round(dist * 2.5) || 1;
+            estimates[poi.id] = {
+              normal_time_mins: normal,
+              rush_hour_time_mins: Math.round(normal * 1.25) + 4,
+              distance_miles: parseFloat(dist.toFixed(2))
+            };
+          }
+        }));
+        setAutoDistances(estimates);
+      } catch (err) {
+        console.error("Error calculating auto commutes in modal:", err);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [address, pois, settings.GOOGLE_MAPS_API_KEY]);
+
   // Handle Clipboard Paste of Images (Ctrl+V)
   const handlePaste = (e) => {
     const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -3044,55 +3085,83 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pois.map(poi => (
-                <div key={`modal-poi-${poi.id}`} className="bg-slate-950/80 p-4 rounded-xl border border-slate-850 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-300">{poi.name} commute</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleDistanceChange(poi.id, 'normal_time_mins', '');
-                        handleDistanceChange(poi.id, 'rush_hour_time_mins', '');
-                        handleDistanceChange(poi.id, 'distance_miles', '');
-                      }}
-                      className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 transition duration-150 flex items-center gap-0.5"
-                    >
-                      Reset to Auto
-                    </button>
+              {pois.map(poi => {
+                const isNormalOverride = distances[poi.id]?.normal_time_mins !== '';
+                const isTrafficOverride = distances[poi.id]?.rush_hour_time_mins !== '';
+                const isDistOverride = distances[poi.id]?.distance_miles !== '';
+                const hasAnyOverride = isNormalOverride || isTrafficOverride || isDistOverride;
+
+                return (
+                  <div key={`modal-poi-${poi.id}`} className="bg-slate-950/80 p-4 rounded-xl border border-slate-850 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-300">{poi.name} commute</span>
+                      {hasAnyOverride ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleDistanceChange(poi.id, 'normal_time_mins', '');
+                            handleDistanceChange(poi.id, 'rush_hour_time_mins', '');
+                            handleDistanceChange(poi.id, 'distance_miles', '');
+                          }}
+                          className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 transition duration-150 flex items-center gap-0.5"
+                        >
+                          Reset to Auto
+                        </button>
+                      ) : (
+                        <span className="text-[9px] font-bold text-cyan-400/80 italic select-none">
+                          Auto-calculating
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-semibold text-slate-500">Normal (m)</label>
+                        <input
+                          type="number"
+                          value={distances[poi.id]?.normal_time_mins || ''}
+                          placeholder={autoDistances[poi.id]?.normal_time_mins !== undefined ? `${autoDistances[poi.id].normal_time_mins}` : 'Auto'}
+                          onChange={(e) => handleDistanceChange(poi.id, 'normal_time_mins', e.target.value)}
+                          className={`w-full px-2 py-1.5 border rounded focus:outline-none text-xs text-center font-mono transition duration-150 ${
+                            isNormalOverride
+                              ? 'bg-indigo-950/20 border-indigo-800 text-indigo-300 font-bold'
+                              : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
+                          }`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-semibold text-rose-400">Traffic (m)</label>
+                        <input
+                          type="number"
+                          value={distances[poi.id]?.rush_hour_time_mins || ''}
+                          placeholder={autoDistances[poi.id]?.rush_hour_time_mins !== undefined ? `${autoDistances[poi.id].rush_hour_time_mins}` : 'Auto'}
+                          onChange={(e) => handleDistanceChange(poi.id, 'rush_hour_time_mins', e.target.value)}
+                          className={`w-full px-2 py-1.5 border rounded focus:outline-none text-xs text-center font-mono transition duration-150 ${
+                            isTrafficOverride
+                              ? 'bg-indigo-950/20 border-indigo-850 text-rose-300 font-bold'
+                              : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
+                          }`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-semibold text-slate-500">Dist (mi)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={distances[poi.id]?.distance_miles || ''}
+                          placeholder={autoDistances[poi.id]?.distance_miles !== undefined ? `${autoDistances[poi.id].distance_miles}` : 'Auto'}
+                          onChange={(e) => handleDistanceChange(poi.id, 'distance_miles', e.target.value)}
+                          className={`w-full px-2 py-1.5 border rounded focus:outline-none text-xs text-center font-mono transition duration-150 ${
+                            isDistOverride
+                              ? 'bg-indigo-950/20 border-indigo-800 text-indigo-300 font-bold'
+                              : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
+                          }`}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-slate-500">Normal (m)</label>
-                      <input
-                        type="number"
-                        value={distances[poi.id]?.normal_time_mins || ''}
-                        onChange={(e) => handleDistanceChange(poi.id, 'normal_time_mins', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded focus:outline-none text-xs text-slate-200 text-center font-mono"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-rose-400">Traffic (m)</label>
-                      <input
-                        type="number"
-                        value={distances[poi.id]?.rush_hour_time_mins || ''}
-                        onChange={(e) => handleDistanceChange(poi.id, 'rush_hour_time_mins', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded focus:outline-none text-xs text-slate-200 text-center font-mono"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-slate-500">Dist (mi)</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={distances[poi.id]?.distance_miles || ''}
-                        onChange={(e) => handleDistanceChange(poi.id, 'distance_miles', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-800 rounded focus:outline-none text-xs text-slate-200 text-center font-mono"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
