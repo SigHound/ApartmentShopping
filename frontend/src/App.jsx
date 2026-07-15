@@ -1860,23 +1860,29 @@ function ListingsView({
                   {/* Floorplan image thumbnail */}
                   {apt.floorplan_image ? (
                     <div 
-                      className="absolute inset-0 w-full h-full opacity-35 group-hover:opacity-50 transition cursor-crosshair"
+                      className="absolute inset-0 w-full h-full opacity-35 group-hover:opacity-50 transition cursor-pointer"
                       onMouseEnter={(e) => handleMouseMove(e, apt.floorplan_image)}
                       onMouseMove={(e) => handleMouseMove(e, apt.floorplan_image)}
                       onMouseLeave={() => setHoveredFloorplan(null)}
+                      onClick={() => onEdit(apt)}
+                      title="Click to edit listing details"
                     >
                       <img 
                         src={`${API_URL}${apt.floorplan_image}`} 
                         alt="Floorplan thumbnail" 
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute bottom-2 right-2 p-1.5 bg-slate-950/80 rounded-lg text-xs font-semibold text-slate-300 flex items-center gap-1 border border-slate-800">
+                      <div className="absolute bottom-2 right-2 p-1.5 bg-slate-950/80 rounded-lg text-xs font-semibold text-slate-300 flex items-center gap-1 border border-slate-800 pointer-events-none">
                         <ZoomIn className="h-3 w-3" />
                         Hover Zoom
                       </div>
                     </div>
                   ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 bg-slate-950/90 gap-1.5 select-none">
+                    <div 
+                      className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 bg-slate-950/90 gap-1.5 select-none cursor-pointer hover:bg-slate-900/90 hover:text-slate-400 transition"
+                      onClick={() => onEdit(apt)}
+                      title="Click to edit listing details"
+                    >
                       <FileText className="h-10 w-10 opacity-30" />
                       <span className="text-xs font-medium uppercase tracking-wider">No Floorplan Uploaded</span>
                     </div>
@@ -2780,7 +2786,8 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
       ...prev,
       [poiId]: {
         ...prev[poiId],
-        [field]: value
+        [field]: value,
+        is_manual: 1
       }
     }));
   };
@@ -2836,13 +2843,15 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
           }
         }
 
+        const isManualVal = manual.is_manual !== undefined ? manual.is_manual : 0;
         return {
           poi_id: poi.id,
           poi_name: poi.name,
           poi_address: poi.address,
           normal_time_mins: normalTime,
           rush_hour_time_mins: rushTime,
-          distance_miles: dMiles
+          distance_miles: dMiles,
+          is_manual: isManualVal
         };
       }));
 
@@ -3086,31 +3095,69 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pois.map(poi => {
-                const isNormalOverride = distances[poi.id]?.normal_time_mins !== '';
-                const isTrafficOverride = distances[poi.id]?.rush_hour_time_mins !== '';
-                const isDistOverride = distances[poi.id]?.distance_miles !== '';
-                const hasAnyOverride = isNormalOverride || isTrafficOverride || isDistOverride;
+                const isManual = distances[poi.id]?.is_manual === 1;
+                const isNormalOverride = isManual && distances[poi.id]?.normal_time_mins !== '';
+                const isTrafficOverride = isManual && distances[poi.id]?.rush_hour_time_mins !== '';
+                const isDistOverride = isManual && distances[poi.id]?.distance_miles !== '';
 
                 return (
                   <div key={`modal-poi-${poi.id}`} className="bg-slate-950/80 p-4 rounded-xl border border-slate-850 space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-slate-300">{poi.name} commute</span>
-                      {hasAnyOverride ? (
+                      {isManual ? (
                         <button
                           type="button"
                           onClick={() => {
-                            handleDistanceChange(poi.id, 'normal_time_mins', '');
-                            handleDistanceChange(poi.id, 'rush_hour_time_mins', '');
-                            handleDistanceChange(poi.id, 'distance_miles', '');
+                            setDistances(prev => ({
+                              ...prev,
+                              [poi.id]: {
+                                normal_time_mins: '',
+                                rush_hour_time_mins: '',
+                                distance_miles: '',
+                                is_manual: 0
+                              }
+                            }));
                           }}
                           className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 transition duration-150 flex items-center gap-0.5"
+                          title="Clear manual overrides and return to automatic calculations"
                         >
                           Reset to Auto
                         </button>
                       ) : (
-                        <span className="text-[9px] font-bold text-cyan-400/80 italic select-none">
-                          Auto-calculating
-                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!address) return;
+                            const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+                            if (!coords) return;
+                            
+                            let route = await clientCalculateRoute(coords.lon, coords.lat, poi.longitude, poi.latitude);
+                            let normalTime, rushTime, dMiles;
+                            if (route) {
+                              dMiles = route.distance_miles;
+                              normalTime = route.normal_time_mins;
+                              rushTime = route.rush_hour_time_mins;
+                            } else {
+                              const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
+                              dMiles = parseFloat(dist.toFixed(2));
+                              normalTime = Math.round(dist * 2.5) || 1;
+                              rushTime = Math.round(normalTime * 1.25) + 4;
+                            }
+                            
+                            setAutoDistances(prev => ({
+                              ...prev,
+                              [poi.id]: {
+                                normal_time_mins: normalTime,
+                                rush_hour_time_mins: rushTime,
+                                distance_miles: dMiles
+                              }
+                            }));
+                          }}
+                          className="text-[9px] font-bold text-cyan-400 hover:text-cyan-300 transition duration-150 flex items-center gap-0.5"
+                          title="Re-estimate driving times using active maps fallback"
+                        >
+                          Refresh Data
+                        </button>
                       )}
                     </div>
                     

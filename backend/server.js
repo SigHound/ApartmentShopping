@@ -531,21 +531,27 @@ app.post('/api/apartments', upload.single('floorplan'), async (req, res) => {
 
     for (const poi of pois) {
       let commute = { distance_miles: null, normal_time_mins: null, rush_hour_time_mins: null };
+      const manual = parsedCustomDistances[poi.id];
+      const hasManualValue = manual && (
+        (manual.normal_time_mins !== undefined && manual.normal_time_mins !== null && manual.normal_time_mins !== '') ||
+        (manual.rush_hour_time_mins !== undefined && manual.rush_hour_time_mins !== null && manual.rush_hour_time_mins !== '') ||
+        (manual.distance_miles !== undefined && manual.distance_miles !== null && manual.distance_miles !== '')
+      );
 
-      // If user manually entered it, use that first
-      if (parsedCustomDistances[poi.id]) {
-        commute.normal_time_mins = parsedCustomDistances[poi.id].normal_time_mins ? parseInt(parsedCustomDistances[poi.id].normal_time_mins) : null;
-        commute.rush_hour_time_mins = parsedCustomDistances[poi.id].rush_hour_time_mins ? parseInt(parsedCustomDistances[poi.id].rush_hour_time_mins) : null;
-        commute.distance_miles = parsedCustomDistances[poi.id].distance_miles ? parseFloat(parsedCustomDistances[poi.id].distance_miles) : null;
+      // If user manually entered a value, use that first
+      if (hasManualValue) {
+        commute.normal_time_mins = (manual.normal_time_mins !== '' && manual.normal_time_mins !== null) ? parseInt(manual.normal_time_mins) : null;
+        commute.rush_hour_time_mins = (manual.rush_hour_time_mins !== '' && manual.rush_hour_time_mins !== null) ? parseInt(manual.rush_hour_time_mins) : null;
+        commute.distance_miles = (manual.distance_miles !== '' && manual.distance_miles !== null) ? parseFloat(manual.distance_miles) : null;
       } else {
-        // Otherwise, calculate standard geocoded / Google Maps travel times
+        // Otherwise, calculate standard geocoded / Google Maps / OSRM travel times
         commute = await calculateCommute(insertedApartment, poi, apiKey);
       }
 
       await db.run(`
-        INSERT INTO apartment_distances (apartment_id, poi_id, normal_time_mins, rush_hour_time_mins, distance_miles)
-        VALUES (?, ?, ?, ?, ?)`,
-        [apartmentId, poi.id, commute.normal_time_mins, commute.rush_hour_time_mins, commute.distance_miles]
+        INSERT INTO apartment_distances (apartment_id, poi_id, normal_time_mins, rush_hour_time_mins, distance_miles, is_manual)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        [apartmentId, poi.id, commute.normal_time_mins, commute.rush_hour_time_mins, commute.distance_miles, hasManualValue ? 1 : 0]
       );
     }
 
@@ -653,22 +659,29 @@ app.put('/api/apartments/:id', upload.single('floorplan'), async (req, res) => {
 
     for (const poi of pois) {
       let commute = null;
+      const manual = parsedCustomDistances[poi.id];
+      const hasManualValue = manual && (
+        (manual.normal_time_mins !== undefined && manual.normal_time_mins !== null && manual.normal_time_mins !== '') ||
+        (manual.rush_hour_time_mins !== undefined && manual.rush_hour_time_mins !== null && manual.rush_hour_time_mins !== '') ||
+        (manual.distance_miles !== undefined && manual.distance_miles !== null && manual.distance_miles !== '')
+      );
 
-      if (parsedCustomDistances[poi.id]) {
+      if (hasManualValue) {
         commute = {
-          normal_time_mins: parsedCustomDistances[poi.id].normal_time_mins ? parseInt(parsedCustomDistances[poi.id].normal_time_mins) : null,
-          rush_hour_time_mins: parsedCustomDistances[poi.id].rush_hour_time_mins ? parseInt(parsedCustomDistances[poi.id].rush_hour_time_mins) : null,
-          distance_miles: parsedCustomDistances[poi.id].distance_miles ? parseFloat(parsedCustomDistances[poi.id].distance_miles) : null
+          normal_time_mins: (manual.normal_time_mins !== '' && manual.normal_time_mins !== null) ? parseInt(manual.normal_time_mins) : null,
+          rush_hour_time_mins: (manual.rush_hour_time_mins !== '' && manual.rush_hour_time_mins !== null) ? parseInt(manual.rush_hour_time_mins) : null,
+          distance_miles: (manual.distance_miles !== '' && manual.distance_miles !== null) ? parseFloat(manual.distance_miles) : null
         };
-      } else if (addressChanged) {
+      } else {
+        // If there's no manual override or user cleared manual values (Reset to Auto), always calculate/recalculate the commute
         commute = await calculateCommute(updatedApartment, poi, apiKey);
       }
 
       if (commute) {
         await db.run(`
-          INSERT OR REPLACE INTO apartment_distances (apartment_id, poi_id, normal_time_mins, rush_hour_time_mins, distance_miles)
-          VALUES (?, ?, ?, ?, ?)`,
-          [id, poi.id, commute.normal_time_mins, commute.rush_hour_time_mins, commute.distance_miles]
+          INSERT OR REPLACE INTO apartment_distances (apartment_id, poi_id, normal_time_mins, rush_hour_time_mins, distance_miles, is_manual)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+          [id, poi.id, commute.normal_time_mins, commute.rush_hour_time_mins, commute.distance_miles, hasManualValue ? 1 : 0]
         );
       }
     }

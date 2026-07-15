@@ -105,6 +105,7 @@ function initializeDatabase() {
       normal_time_mins INTEGER,
       rush_hour_time_mins INTEGER,
       distance_miles REAL,
+      is_manual INTEGER DEFAULT 0,
       PRIMARY KEY (apartment_id, poi_id),
       FOREIGN KEY (apartment_id) REFERENCES apartments(id) ON DELETE CASCADE,
       FOREIGN KEY (poi_id) REFERENCES pois(id) ON DELETE CASCADE
@@ -121,6 +122,9 @@ function initializeDatabase() {
       // Safely ignore error if column already exists
     });
     db.run(`ALTER TABLE apartments ADD COLUMN bathrooms REAL;`, (err) => {
+      // Safely ignore error if column already exists
+    });
+    db.run(`ALTER TABLE apartment_distances ADD COLUMN is_manual INTEGER DEFAULT 0;`, (err) => {
       // Safely ignore error if column already exists
     });
 
