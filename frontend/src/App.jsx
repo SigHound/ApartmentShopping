@@ -14,6 +14,8 @@ import {
   Map as MapIcon, 
   Briefcase, 
   ShoppingBag, 
+  ArrowUp,
+  ArrowDown, 
   Calendar,
   Layers,
   Sparkles,
@@ -825,6 +827,28 @@ export default function App() {
     }
   };
 
+  const handleReorderPois = async (orderedPois) => {
+    setPois(orderedPois);
+    if (isStandalone) {
+      localStorage.setItem('vibenest_pois', JSON.stringify(orderedPois));
+    } else {
+      try {
+        const orderedIds = orderedPois.map(p => p.id);
+        await fetch(`${API_URL}/api/pois/reorder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderedIds })
+        });
+        // Refetch apartments to get the reordered distances
+        const aptsRes = await fetch(`${API_URL}/api/apartments`);
+        const aptsData = await aptsRes.json();
+        setApartments(aptsData);
+      } catch (err) {
+        console.error('Error reordering POIs:', err);
+      }
+    }
+  };
+
   const handleUpdatePoi = async (id, name, address, icon, isChain) => {
     const finalIcon = icon || '📍';
     const isChainVal = isChain ? 1 : 0;
@@ -1079,6 +1103,7 @@ export default function App() {
                 onAddPoi={handleAddPoi} 
                 onUpdatePoi={handleUpdatePoi} 
                 onDeletePoi={handleDeletePoi} 
+                onReorderPois={handleReorderPois}
                 onExportData={handleExportData}
                 onImportData={handleImportData}
               />
@@ -2007,7 +2032,7 @@ function ListingsView({
                     {/* Quick Commute details */}
                     {apt.distances && apt.distances.length > 0 && (() => {
                       const isCommutesExpanded = !!expandedCommutes[apt.id];
-                      const visibleCommutes = isCommutesExpanded ? apt.distances : apt.distances.slice(0, 2);
+                      const visibleCommutes = isCommutesExpanded ? apt.distances : apt.distances.slice(0, 4);
                       return (
                         <div className={viewFormat === 'grid' 
                           ? "space-y-1.5 mb-5 text-xs" 
@@ -2017,11 +2042,9 @@ function ListingsView({
                             {visibleCommutes.map(dist => (
                               <div key={`comm-${apt.id}-${dist.poi_id}`} className="flex justify-between items-center text-slate-300 animate-fade-in">
                                 <span className="font-semibold text-slate-400 flex items-center gap-1.5">
-                                  {dist.poi_name.toLowerCase().includes('work') ? (
-                                    <Briefcase className="h-3.5 w-3.5 text-indigo-400" />
-                                  ) : (
-                                    <ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />
-                                  )}
+                                  <span className="w-4 h-4 flex items-center justify-center text-xs select-none">
+                                    {dist.poi_icon || '📍'}
+                                  </span>
                                   {dist.poi_name}
                                 </span>
                                 <span className="font-mono">
@@ -2034,7 +2057,7 @@ function ListingsView({
                               </div>
                             ))}
                           </div>
-                          {apt.distances.length > 2 && (
+                          {apt.distances.length > 4 && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -2043,7 +2066,7 @@ function ListingsView({
                               }}
                               className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 transition duration-150 flex items-center gap-0.5 mt-2 self-start select-none bg-slate-900/50 hover:bg-slate-900 border border-slate-850 px-2 py-0.5 rounded-lg"
                             >
-                              {isCommutesExpanded ? 'Show less commutes' : `+ ${apt.distances.length - 2} more commutes`}
+                              {isCommutesExpanded ? 'Show less commutes' : `+ ${apt.distances.length - 4} more commutes`}
                             </button>
                           )}
                           {!settings.GOOGLE_MAPS_API_KEY && (
@@ -2371,7 +2394,7 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
 }
 
 // 4. SETTINGS VIEW (Google Maps API Key, POI Addresses config)
-function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, onUpdatePoi, onDeletePoi, onExportData, onImportData }) {
+function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, onUpdatePoi, onDeletePoi, onReorderPois, onExportData, onImportData }) {
   const [apiKeyInput, setApiKeyInput] = useState(settings.GOOGLE_MAPS_API_KEY || '');
   const [newPoiName, setNewPoiName] = useState('');
   const [newPoiAddress, setNewPoiAddress] = useState('');
@@ -2380,6 +2403,17 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showAddPoiForm, setShowAddPoiForm] = useState(false);
   const [newPoiIsChain, setNewPoiIsChain] = useState(false);
+
+  const handleMovePoi = (index, direction) => {
+    const updated = [...pois];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < updated.length) {
+      const temp = updated[index];
+      updated[index] = updated[targetIndex];
+      updated[targetIndex] = temp;
+      onReorderPois(updated);
+    }
+  };
 
   const handlePoiNameChange = (val) => {
     setNewPoiName(val);
@@ -2581,7 +2615,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
 
           {/* List of current POIs */}
           <div className="space-y-3 divide-y divide-slate-800 max-h-60 overflow-y-auto pr-1">
-            {pois.map(poi => (
+            {pois.map((poi, index) => (
               <div key={`poi-row-${poi.id}`} className="flex items-center justify-between pt-3 first:pt-0">
                 <div>
                   <h4 className="font-semibold text-slate-200 text-sm flex items-center gap-1.5">
@@ -2591,6 +2625,24 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                   <p className="text-xs text-slate-500 mt-0.5">{poi.address || 'Manual entries'}</p>
                 </div>
                 <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleMovePoi(index, 'up')}
+                    disabled={index === 0}
+                    className="text-slate-500 hover:text-cyan-455 p-1 rounded hover:bg-slate-800 transition disabled:opacity-30 disabled:hover:text-slate-500"
+                    title="Move Up"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMovePoi(index, 'down')}
+                    disabled={index === pois.length - 1}
+                    className="text-slate-500 hover:text-cyan-455 p-1 rounded hover:bg-slate-800 transition disabled:opacity-30 disabled:hover:text-slate-500"
+                    title="Move Down"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
                   <button
                     onClick={() => startEditPoi(poi)}
                     className="text-slate-500 hover:text-cyan-400 p-1.5 rounded hover:bg-cyan-500/10 transition"
@@ -3304,11 +3356,17 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                 const isTrafficOverride = isManual && distances[poi.id]?.rush_hour_time_mins !== '';
                 const isDistOverride = isManual && distances[poi.id]?.distance_miles !== '';
 
+                const isChainPoi = poi.is_chain === 1;
+
                 return (
                   <div key={`modal-poi-${poi.id}`} className="bg-slate-950/80 p-4 rounded-xl border border-slate-850 space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-slate-300">{poi.name} commute</span>
-                      {isManual ? (
+                      {isChainPoi ? (
+                        <span className="text-[9px] font-semibold text-cyan-500 bg-cyan-950/20 border border-cyan-900/60 px-1.5 py-0.5 rounded select-none">
+                          Dynamic Chain
+                        </span>
+                      ) : isManual ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -3376,12 +3434,15 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                         <input
                           type="number"
                           value={distances[poi.id]?.normal_time_mins || ''}
-                          placeholder={autoDistances[poi.id]?.normal_time_mins !== undefined ? `${autoDistances[poi.id].normal_time_mins}` : 'Auto'}
+                          placeholder={isChainPoi ? 'Auto' : (autoDistances[poi.id]?.normal_time_mins !== undefined ? `${autoDistances[poi.id].normal_time_mins}` : 'Auto')}
+                          disabled={isChainPoi}
                           onChange={(e) => handleDistanceChange(poi.id, 'normal_time_mins', e.target.value)}
                           className={`w-full px-2 py-1.5 border rounded focus:outline-none text-xs text-center font-mono transition duration-150 ${
-                            isNormalOverride
-                              ? 'bg-indigo-950/20 border-indigo-800 text-indigo-300 font-bold'
-                              : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
+                            isChainPoi 
+                              ? 'bg-slate-900/40 border-slate-900 text-slate-600 cursor-not-allowed select-none'
+                              : isNormalOverride
+                                ? 'bg-indigo-950/20 border-indigo-800 text-indigo-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
                           }`}
                         />
                       </div>
@@ -3390,12 +3451,15 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                         <input
                           type="number"
                           value={distances[poi.id]?.rush_hour_time_mins || ''}
-                          placeholder={autoDistances[poi.id]?.rush_hour_time_mins !== undefined ? `${autoDistances[poi.id].rush_hour_time_mins}` : 'Auto'}
+                          placeholder={isChainPoi ? 'Auto' : (autoDistances[poi.id]?.rush_hour_time_mins !== undefined ? `${autoDistances[poi.id].rush_hour_time_mins}` : 'Auto')}
+                          disabled={isChainPoi}
                           onChange={(e) => handleDistanceChange(poi.id, 'rush_hour_time_mins', e.target.value)}
                           className={`w-full px-2 py-1.5 border rounded focus:outline-none text-xs text-center font-mono transition duration-150 ${
-                            isTrafficOverride
-                              ? 'bg-indigo-950/20 border-indigo-850 text-rose-300 font-bold'
-                              : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
+                            isChainPoi 
+                              ? 'bg-slate-900/40 border-slate-900 text-slate-600 cursor-not-allowed select-none'
+                              : isTrafficOverride
+                                ? 'bg-indigo-950/20 border-indigo-850 text-rose-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
                           }`}
                         />
                       </div>
@@ -3405,12 +3469,15 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                           type="number"
                           step="0.1"
                           value={distances[poi.id]?.distance_miles || ''}
-                          placeholder={autoDistances[poi.id]?.distance_miles !== undefined ? `${autoDistances[poi.id].distance_miles}` : 'Auto'}
+                          placeholder={isChainPoi ? 'Auto' : (autoDistances[poi.id]?.distance_miles !== undefined ? `${autoDistances[poi.id].distance_miles}` : 'Auto')}
+                          disabled={isChainPoi}
                           onChange={(e) => handleDistanceChange(poi.id, 'distance_miles', e.target.value)}
                           className={`w-full px-2 py-1.5 border rounded focus:outline-none text-xs text-center font-mono transition duration-150 ${
-                            isDistOverride
-                              ? 'bg-indigo-950/20 border-indigo-800 text-indigo-300 font-bold'
-                              : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
+                            isChainPoi 
+                              ? 'bg-slate-900/40 border-slate-900 text-slate-600 cursor-not-allowed select-none'
+                              : isDistOverride
+                                ? 'bg-indigo-950/20 border-indigo-800 text-indigo-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-500 placeholder-slate-500'
                           }`}
                         />
                       </div>

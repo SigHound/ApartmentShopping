@@ -96,6 +96,7 @@ function initializeDatabase() {
       longitude REAL,
       icon TEXT DEFAULT '📍',
       is_chain INTEGER DEFAULT 0,
+      display_order INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -142,6 +143,9 @@ function initializeDatabase() {
       // Safely ignore error if column already exists
     });
     db.run(`ALTER TABLE apartment_distances ADD COLUMN is_manual INTEGER DEFAULT 0;`, (err) => {
+      // Safely ignore error if column already exists
+    });
+    db.run(`ALTER TABLE pois ADD COLUMN display_order INTEGER DEFAULT 0;`, (err) => {
       // Safely ignore error if column already exists
     });
 

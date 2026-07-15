@@ -364,7 +364,7 @@ app.post('/api/settings', async (req, res) => {
 // 2. POIs (Points of Interest)
 app.get('/api/pois', async (req, res) => {
   try {
-    const pois = await db.all("SELECT * FROM pois ORDER BY name ASC");
+    const pois = await db.all("SELECT * FROM pois ORDER BY display_order ASC, name ASC");
     res.json(pois);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -485,6 +485,21 @@ app.delete('/api/pois/:id', async (req, res) => {
   try {
     await db.run("DELETE FROM pois WHERE id = ?", [id]);
     res.json({ success: true, message: `POI ${id} deleted` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/pois/reorder', async (req, res) => {
+  const { orderedIds } = req.body;
+  if (!Array.isArray(orderedIds)) {
+    return res.status(400).json({ error: 'orderedIds must be an array' });
+  }
+  try {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.run("UPDATE pois SET display_order = ? WHERE id = ?", [i, orderedIds[i]]);
+    }
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -657,10 +672,11 @@ app.get('/api/apartments', async (req, res) => {
     // For each apartment, fetch distances and criteria matches
     for (let apt of apartments) {
       const distances = await db.all(`
-        SELECT ad.*, p.name as poi_name, p.address as poi_address 
+        SELECT ad.*, p.name as poi_name, p.address as poi_address, p.icon as poi_icon, p.is_chain as poi_is_chain 
         FROM apartment_distances ad
         JOIN pois p ON ad.poi_id = p.id
-        WHERE ad.apartment_id = ?`, 
+        WHERE ad.apartment_id = ?
+        ORDER BY p.display_order ASC, p.name ASC`, 
         [apt.id]
       );
       
