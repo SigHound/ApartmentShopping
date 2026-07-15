@@ -66,9 +66,35 @@ function getNextTuesdayTimestamps() {
   };
 }
 
-// Geocoding helper (OSM Nominatim)
+// Geocoding helper (OSM Nominatim / Google fallback)
 async function geocodeAddress(address) {
   if (!address) return { lat: null, lon: null };
+
+  // 1. Try Google Geocoding first if we have a key
+  const apiKey = await getGoogleApiKey();
+  if (apiKey) {
+    try {
+      const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+        params: {
+          address: address,
+          key: apiKey
+        }
+      });
+      if (response.data && response.data.status === 'OK' && response.data.results.length > 0) {
+        const loc = response.data.results[0].geometry.location;
+        return {
+          lat: parseFloat(loc.lat),
+          lon: parseFloat(loc.lng)
+        };
+      } else {
+        console.warn('Google Geocoding API returned status:', response.data.status, 'for address:', address);
+      }
+    } catch (err) {
+      console.error('Google Geocoding error for:', address, err.message);
+    }
+  }
+
+  // 2. Fallback to OpenStreetMap Nominatim
   try {
     const response = await axios.get('https://nominatim.openstreetmap.org/search', {
       params: {

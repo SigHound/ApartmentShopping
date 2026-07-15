@@ -29,7 +29,8 @@ import {
   List,
   Bed,
   Upload,
-  Download
+  Download,
+  Wrench
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -102,8 +103,25 @@ const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-const clientGeocode = async (address) => {
+const clientGeocode = async (address, apiKey = null) => {
   if (!address) return { lat: 30.2672, lon: -97.7431 };
+
+  if (apiKey) {
+    try {
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`);
+      const data = await res.json();
+      if (data && data.status === 'OK' && data.results.length > 0) {
+        const loc = data.results[0].geometry.location;
+        return { lat: parseFloat(loc.lat), lon: parseFloat(loc.lng) };
+      } else {
+        console.warn('Google Client Geocoding API status:', data.status);
+      }
+    } catch (err) {
+      console.error('Client Google geocoding error:', err);
+    }
+  }
+
+  // Fallback to OSM
   try {
     const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`);
     const data = await res.json();
@@ -115,6 +133,219 @@ const clientGeocode = async (address) => {
   }
   return { lat: 30.2672, lon: -97.7431 }; // Default Austin, TX coords
 };
+
+const loadGoogleMapsScript = (apiKey, callback) => {
+  if (window.google && window.google.maps) {
+    if (callback) callback();
+    return;
+  }
+  const existingScript = document.getElementById('googleMapsScript');
+  if (existingScript) {
+    existingScript.addEventListener('load', callback);
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+  script.id = 'googleMapsScript';
+  script.async = true;
+  script.defer = true;
+  script.onload = () => {
+    if (callback) callback();
+  };
+  document.body.appendChild(script);
+};
+
+const GOOGLE_MAPS_DARK_STYLE = [
+  { elementType: "geometry", stylers: [{ color: "#1e293b" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#1e293b" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#cbd5e1" }]
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#94a3b8" }]
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#0f172a" }]
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#475569" }]
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#334155" }]
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1e293b" }]
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#475569" }]
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#1e293b" }]
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#cbd5e1" }]
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#0f172a" }]
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#475569" }]
+  }
+];
+
+function GoogleMap({ apiKey, center, zoom, apartments, pois, apiUrl }) {
+  const containerRef = React.useRef(null);
+  const mapRef = React.useRef(null);
+  const markersRef = React.useRef([]);
+  const infoWindowRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!apiKey) return;
+
+    loadGoogleMapsScript(apiKey, () => {
+      if (!containerRef.current) return;
+
+      if (!mapRef.current) {
+        mapRef.current = new window.google.maps.Map(containerRef.current, {
+          center: { lat: center.lat, lng: center.lon },
+          zoom: zoom || 12,
+          styles: GOOGLE_MAPS_DARK_STYLE,
+          mapTypeControl: false,
+          streetViewControl: true,
+          fullscreenControl: false
+        });
+        infoWindowRef.current = new window.google.maps.InfoWindow();
+      } else {
+        mapRef.current.setCenter({ lat: center.lat, lng: center.lon });
+      }
+
+      const map = mapRef.current;
+
+      // Clear existing markers
+      markersRef.current.forEach(m => m.setMap(null));
+      markersRef.current = [];
+
+      // Add Apartments Markers
+      apartments.forEach(apt => {
+        if (!apt.latitude || !apt.longitude) return;
+
+        const svgMarker = {
+          path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+          fillColor: "#a78bfa",
+          fillOpacity: 1.0,
+          strokeWeight: 1.5,
+          strokeColor: "#ffffff",
+          scale: 1.5,
+          anchor: new window.google.maps.Point(12, 24)
+        };
+
+        const marker = new window.google.maps.Marker({
+          position: { lat: apt.latitude, lng: apt.longitude },
+          map: map,
+          title: apt.name,
+          icon: svgMarker
+        });
+
+        marker.addListener("click", () => {
+          const formattedRent = apt.rent ? apt.rent.toLocaleString() : '--';
+          const matchPercent = apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--';
+          const sizeIndicator = (apt.bedrooms || apt.bathrooms) ? `
+            <div style="font-size: 10px; font-weight: bold; background: #e2e8f0; border: 1px solid #cbd5e1; color: #1e293b; padding: 3px 6px; border-radius: 4px; display: inline-block; margin-bottom: 8px;">
+              ${apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'} • 
+              ${apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}
+            </div>
+          ` : '';
+          const imageHtml = apt.floorplan_image ? `
+            <div style="width: 100%; height: 120px; background: #0f172a; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; border-radius: 6px; overflow: hidden; border: 1px solid #cbd5e1;">
+              <img src="${apiUrl}${apt.floorplan_image}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+            </div>
+          ` : '';
+
+          const contentString = `
+            <div style="color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 4px; max-width: 280px; min-width: 240px;">
+              <h4 style="margin: 0 0 2px 0; font-size: 14px; font-weight: bold; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${apt.name}</h4>
+              <p style="margin: 0 0 8px 0; font-size: 11px; color: #475569; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${apt.address || 'Address not listed'}</p>
+              ${sizeIndicator}
+              ${imageHtml}
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; border-top: 1px solid #cbd5e1; padding-top: 6px; margin-top: 4px;">
+                <span style="color: #059669;">$${formattedRent}/mo</span>
+                <span style="color: #6366f1;">${matchPercent}</span>
+              </div>
+            </div>
+          `;
+          infoWindowRef.current.setContent(contentString);
+          infoWindowRef.current.open(map, marker);
+        });
+
+        markersRef.current.push(marker);
+      });
+
+      // Add POIs Markers
+      pois.forEach(poi => {
+        if (!poi.latitude || !poi.longitude) return;
+
+        const marker = new window.google.maps.Marker({
+          position: { lat: poi.latitude, lng: poi.longitude },
+          map: map,
+          title: poi.name,
+          label: {
+            text: poi.icon || '📍',
+            fontSize: '16px'
+          },
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            fillColor: "#06b6d4",
+            fillOpacity: 0.15,
+            strokeColor: "#06b6d4",
+            strokeWeight: 2,
+            scale: 18
+          }
+        });
+
+        marker.addListener("click", () => {
+          const contentString = `
+            <div style="color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 4px; min-width: 160px;">
+              <h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: bold; color: #0f172a; display: flex; align-items: center; gap: 6px;">
+                <span>${poi.icon || '📍'}</span>
+                <span>${poi.name}</span>
+              </h4>
+              <p style="margin: 0; font-size: 11px; color: #475569; line-height: 1.4;">${poi.address || 'No Address'}</p>
+            </div>
+          `;
+          infoWindowRef.current.setContent(contentString);
+          infoWindowRef.current.open(map, marker);
+        });
+
+        markersRef.current.push(marker);
+      });
+    });
+  }, [apiKey, center, apartments, pois, apiUrl]);
+
+  return <div ref={containerRef} style={{ height: '100%', width: '100%' }} />;
+}
 
 export default function App() {
   // Navigation Tabs
@@ -485,7 +716,7 @@ export default function App() {
         icon: finalIcon
       };
       
-      const coords = await clientGeocode(address);
+      const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
       newPoi.latitude = coords.lat;
       newPoi.longitude = coords.lon;
       
@@ -512,7 +743,7 @@ export default function App() {
       localStorage.setItem('vibenest_apartments', JSON.stringify(updatedApts));
     } else {
       try {
-        const coords = await clientGeocode(address);
+        const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
         const res = await fetch(`${API_URL}/api/pois`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -555,7 +786,7 @@ export default function App() {
   const handleUpdatePoi = async (id, name, address, icon) => {
     const finalIcon = icon || '📍';
     if (isStandalone) {
-      const coords = await clientGeocode(address);
+      const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
       const updatedPois = pois.map(p => p.id === id ? { ...p, name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon } : p);
       setPois(updatedPois);
       localStorage.setItem('vibenest_pois', JSON.stringify(updatedPois));
@@ -579,7 +810,7 @@ export default function App() {
       localStorage.setItem('vibenest_apartments', JSON.stringify(updatedApts));
     } else {
       try {
-        const coords = await clientGeocode(address);
+        const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
         const res = await fetch(`${API_URL}/api/pois/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -1135,85 +1366,95 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
               <MapIcon className="h-5 w-5 text-indigo-400" />
               GeoNest Mapping
             </h3>
-            
             <div className="flex-1 w-full rounded-xl overflow-hidden border border-slate-800">
-              <MapContainer 
-                center={mapCenter} 
-                zoom={12} 
-                style={{ height: '100%', width: '100%' }}
-              >
-                <ChangeMapView center={mapCenter} zoom={12} />
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              {settings.GOOGLE_MAPS_API_KEY ? (
+                <GoogleMap
+                  apiKey={settings.GOOGLE_MAPS_API_KEY}
+                  center={mapCenter}
+                  zoom={12}
+                  apartments={scoredApartments}
+                  pois={pois}
+                  apiUrl={API_URL}
                 />
-                
-                {/* Apartments markers */}
-                {scoredApartments
-                  .filter(a => a.latitude && a.longitude)
-                  .map(apt => (
-                    <Marker 
-                      key={`apt-${apt.id}`} 
-                      position={[apt.latitude, apt.longitude]} 
-                      icon={apartmentMarkerIcon}
-                    >
-                      <Popup>
-                        <div className="space-y-2.5 p-1 font-sans w-72 text-slate-100">
-                          <div>
-                            <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
-                            <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 mt-0.5">{apt.address || 'Address not listed'}</p>
-                          </div>
-                          
-                          {(apt.bedrooms || apt.bathrooms) && (
-                            <div className="text-[10px] text-slate-300 font-bold bg-slate-950/40 border border-slate-800 px-2 py-1 rounded-md flex items-center gap-1.5 w-fit">
-                              <span>{apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}</span>
-                              <span className="text-slate-600">•</span>
-                              <span>{apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}</span>
+              ) : (
+                <MapContainer 
+                  center={mapCenter} 
+                  zoom={12} 
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <ChangeMapView center={mapCenter} zoom={12} />
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  
+                  {/* Apartments markers */}
+                  {scoredApartments
+                    .filter(a => a.latitude && a.longitude)
+                    .map(apt => (
+                      <Marker 
+                        key={`apt-${apt.id}`} 
+                        position={[apt.latitude, apt.longitude]} 
+                        icon={apartmentMarkerIcon}
+                      >
+                        <Popup>
+                          <div className="space-y-2.5 p-1 font-sans w-72 text-slate-100">
+                            <div>
+                              <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
+                              <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 mt-0.5">{apt.address || 'Address not listed'}</p>
                             </div>
-                          )}
+                            
+                            {(apt.bedrooms || apt.bathrooms) && (
+                              <div className="text-[10px] text-slate-300 font-bold bg-slate-950/40 border border-slate-800 px-2 py-1 rounded-md flex items-center gap-1.5 w-fit">
+                                <span>{apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}</span>
+                                <span className="text-slate-600">•</span>
+                                <span>{apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}</span>
+                              </div>
+                            )}
 
-                          {apt.floorplan_image && (
-                            <div className="w-full h-36 rounded-lg overflow-hidden border border-slate-850 bg-slate-950 mt-1.5 flex items-center justify-center p-1">
-                              <img 
-                                src={`${API_URL}${apt.floorplan_image}`} 
-                                alt="Floorplan preview" 
-                                className="max-w-full max-h-full object-contain opacity-95 transition hover:scale-105 duration-200"
-                              />
+                            {apt.floorplan_image && (
+                              <div className="w-full h-36 rounded-lg overflow-hidden border border-slate-850 bg-slate-950 mt-1.5 flex items-center justify-center p-1">
+                                <img 
+                                  src={`${API_URL}${apt.floorplan_image}`} 
+                                  alt="Floorplan preview" 
+                                  className="max-w-full max-h-full object-contain opacity-95 transition hover:scale-105 duration-200"
+                                />
+                              </div>
+                            )}
+
+                            <div className="flex justify-between items-center gap-4 text-xs font-bold pt-1.5 border-t border-slate-805 mt-2">
+                              <span className="text-emerald-400">${apt.rent ? apt.rent.toLocaleString() : '--'}/mo</span>
+                              <span className="text-primary-400">
+                                {apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--'}
+                              </span>
                             </div>
-                          )}
-
-                          <div className="flex justify-between items-center gap-4 text-xs font-bold pt-1.5 border-t border-slate-805 mt-2">
-                            <span className="text-emerald-400">${apt.rent ? apt.rent.toLocaleString() : '--'}/mo</span>
-                            <span className="text-primary-400">
-                              {apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--'}
-                            </span>
                           </div>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  ))}
+                        </Popup>
+                      </Marker>
+                    ))}
 
-                {/* POIs markers */}
-                {pois
-                  .filter(p => p.latitude && p.longitude)
-                  .map(poi => (
-                    <Marker 
-                      key={`poi-${poi.id}`} 
-                      position={[poi.latitude, poi.longitude]} 
-                      icon={createPoiDivIcon(poi.icon)}
-                    >
-                      <Popup>
-                        <div className="p-1 font-sans text-slate-100 w-44">
-                          <h4 className="font-bold text-white text-sm flex items-center gap-1.5">
-                            <span className="text-base">{poi.icon || '📍'}</span>
-                            {poi.name}
-                          </h4>
-                          <p className="text-[11px] text-slate-400 mt-1 leading-normal">{poi.address || 'No Address'}</p>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  ))}
-              </MapContainer>
+                  {/* POIs markers */}
+                  {pois
+                    .filter(p => p.latitude && p.longitude)
+                    .map(poi => (
+                      <Marker 
+                        key={`poi-${poi.id}`} 
+                        position={[poi.latitude, poi.longitude]} 
+                        icon={createPoiDivIcon(poi.icon)}
+                      >
+                        <Popup>
+                          <div className="p-1 font-sans text-slate-100 w-44">
+                            <h4 className="font-bold text-white text-sm flex items-center gap-1.5">
+                              <span className="text-base">{poi.icon || '📍'}</span>
+                              {poi.name}
+                            </h4>
+                            <p className="text-[11px] text-slate-400 mt-1 leading-normal">{poi.address || 'No Address'}</p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    ))}
+                </MapContainer>
+              )}
             </div>
             
             <div className="mt-4 flex gap-4 text-xs font-semibold text-slate-400 justify-center">
@@ -2049,6 +2290,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const [newPoiAddress, setNewPoiAddress] = useState('');
   const [newPoiIcon, setNewPoiIcon] = useState('📍');
   const [editingPoiId, setEditingPoiId] = useState(null);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   const handlePoiNameChange = (val) => {
     setNewPoiName(val);
@@ -2134,18 +2376,51 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
             <Compass className="h-5 w-5 text-indigo-400" />
             Google Maps API Integration
           </h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            By supplying a Google Maps API Key, the application automatically computes driving distances and travel times for rush hour commutes (pessimistic models) and normal driving.
-          </p>
-          <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400 leading-normal space-y-1.5">
-            <span className="font-bold text-slate-300 block">How to get a key?</span>
-            <ol className="list-decimal pl-4 space-y-1">
-              <li>Open Google Cloud Console.</li>
-              <li>Create a new project and configure a billing method (includes free $200 monthly credits).</li>
-              <li>Enable the **Distance Matrix API** and **Geocoding API**.</li>
-              <li>Generate an API credential key and paste it below.</li>
-            </ol>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <p className="text-xs text-slate-400 leading-relaxed md:max-w-[70%]">
+              By supplying a Google Maps API Key, VibeNest automatically upgrades geocoding, computes driving distances, and updates mapping interfaces to Google Maps.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSetupGuide(!showSetupGuide)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-[11px] font-bold text-slate-300 rounded-lg shadow-sm transition self-start md:self-auto"
+            >
+              <Wrench className="h-3.5 w-3.5 text-indigo-400" />
+              {showSetupGuide ? 'Hide Setup Guide' : 'Setup Guide Assistant'}
+            </button>
           </div>
+
+          {showSetupGuide && (
+            <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed space-y-3 transition duration-300">
+              <span className="font-bold text-indigo-400 flex items-center gap-1">
+                🛠️ Google Maps Platform Setup Assistant
+              </span>
+              
+              <ol className="list-decimal pl-4 space-y-2">
+                <li>
+                  Go directly to the <a href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" rel="noopener noreferrer" className="text-primary-400 underline hover:text-primary-300 font-semibold font-bold">Google Cloud Credentials Page</a>.
+                </li>
+                <li>
+                  Create a new project (or select an existing one) and link a **Billing Account** (Google provides a free $200 monthly credit, which is more than enough for personal use).
+                </li>
+                <li>
+                  Search for and **Enable** the following three APIs in your project:
+                  <ul className="list-disc pl-4 mt-1 space-y-0.5 text-slate-400">
+                    <li><span className="font-bold text-slate-300">Maps JavaScript API</span> (renders Google Maps view)</li>
+                    <li><span className="font-bold text-slate-300">Geocoding API</span> (translates addresses to coordinates)</li>
+                    <li><span className="font-bold text-slate-300">Distance Matrix API</span> (estimates commute times)</li>
+                  </ul>
+                </li>
+                <li>
+                  Create an **API Key** under Credentials, copy it, and paste it into the form below!
+                </li>
+              </ol>
+              
+              <div className="pt-2 border-t border-slate-900 text-[10px] text-slate-500">
+                🔒 Your API Key is stored locally in your SQLite database / browser storage and is only sent to Google to load mapping/commute data.
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleApiKeySubmit} className="space-y-3">
             <div className="space-y-1.5">
@@ -2454,7 +2729,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
 
     if (isStandalone) {
       // 1. Geocode client-side
-      const coords = await clientGeocode(address);
+      const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
 
       // 2. Generate distances to all POIs
       const calculatedDistances = pois.map(poi => {
