@@ -15,7 +15,8 @@ import {
   Briefcase, 
   ShoppingBag, 
   ArrowUp,
-  ArrowDown, 
+  ArrowDown,
+  GripVertical, 
   Calendar,
   Layers,
   Sparkles,
@@ -548,8 +549,20 @@ export default function App() {
   // Enhance apartments with calculated scores
   const scoredApartments = apartments.map(apt => {
     const scores = getNormalizedScores(apt);
+    
+    // Sort commutes client-side based on the current order of the global POIs list
+    const sortedDist = [...(apt.distances || [])].sort((a, b) => {
+      const idxA = pois.findIndex(p => p.id === a.poi_id);
+      const idxB = pois.findIndex(p => p.id === b.poi_id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return 0;
+    });
+
     return {
       ...apt,
+      distances: sortedDist,
       ...scores
     };
   });
@@ -2404,6 +2417,31 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const [showAddPoiForm, setShowAddPoiForm] = useState(false);
   const [newPoiIsChain, setNewPoiIsChain] = useState(false);
 
+  const [draggedIndex, setDraggedIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    const updated = [...pois];
+    const item = updated.splice(draggedIndex, 1)[0];
+    updated.splice(index, 0, item);
+    onReorderPois(updated);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+
   const handleMovePoi = (index, direction) => {
     const updated = [...pois];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -2616,13 +2654,33 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
           {/* List of current POIs */}
           <div className="space-y-3 divide-y divide-slate-800 max-h-60 overflow-y-auto pr-1">
             {pois.map((poi, index) => (
-              <div key={`poi-row-${poi.id}`} className="flex items-center justify-between pt-3 first:pt-0">
-                <div>
-                  <h4 className="font-semibold text-slate-200 text-sm flex items-center gap-1.5">
-                    <span className="text-base select-none">{poi.icon || '📍'}</span>
-                    {poi.name}
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-0.5">{poi.address || 'Manual entries'}</p>
+              <div 
+                key={`poi-row-${poi.id}`} 
+                draggable
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                className={`flex items-center justify-between pt-3 first:pt-0 pb-1.5 transition-all duration-200 ${
+                  draggedIndex === index 
+                    ? 'opacity-40 border-b border-dashed border-cyan-500 bg-cyan-950/10' 
+                    : 'hover:bg-slate-900/20'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 p-1 flex items-center justify-center select-none"
+                    title="Drag to reorder"
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-slate-200 text-sm flex items-center gap-1.5">
+                      <span className="text-base select-none">{poi.icon || '📍'}</span>
+                      {poi.name}
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">{poi.address || 'Manual entries'}</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
