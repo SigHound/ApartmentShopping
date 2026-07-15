@@ -534,6 +534,8 @@ export default function App() {
         console.error('Error deleting apartment:', err);
       }
     }
+  };
+
   const handleExportData = () => {
     const dataStr = JSON.stringify({
       apartments: apartments,
