@@ -139,12 +139,14 @@ async function resolveNearestChainBranch(apartment, poi, apiKey) {
   const aptLon = apartment.longitude;
   if (!aptLat || !aptLon) return null;
 
+  const searchTerm = (poi.address && poi.address.trim()) ? poi.address.trim() : poi.name;
+
   // 1. Try Google Places Text Search if we have a key
   if (apiKey) {
     try {
       const response = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
         params: {
-          query: poi.name,
+          query: searchTerm,
           location: `${aptLat},${aptLon}`,
           radius: 15000,
           key: apiKey
@@ -166,7 +168,7 @@ async function resolveNearestChainBranch(apartment, poi, apiKey) {
         return branches[0];
       }
     } catch (err) {
-      console.error('Google Places TextSearch error for:', poi.name, err.message);
+      console.error('Google Places TextSearch error for:', searchTerm, err.message);
     }
   }
 
@@ -174,10 +176,10 @@ async function resolveNearestChainBranch(apartment, poi, apiKey) {
   try {
     const query = `[out:json][timeout:15];
 (
-  node["name"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
-  way["name"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
-  node["brand"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
-  way["brand"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
+  node["name"~"${searchTerm}",i](around:15000,${aptLat},${aptLon});
+  way["name"~"${searchTerm}",i](around:15000,${aptLat},${aptLon});
+  node["brand"~"${searchTerm}",i](around:15000,${aptLat},${aptLon});
+  way["brand"~"${searchTerm}",i](around:15000,${aptLat},${aptLon});
 );
 out center;`;
 
@@ -454,13 +456,12 @@ app.put('/api/pois/:id', async (req, res) => {
 
     const updatedPoi = { id: parseInt(id), name, address, latitude: lat, longitude: lon, icon: finalIcon, is_chain: isChainVal };
 
-    // Invalidate cached branches for this POI if name, is_chain, or address changed
-    if (name !== current.name || isChainVal !== current.is_chain || address !== current.address) {
-      await db.run("DELETE FROM apartment_chain_branches WHERE poi_id = ?", [id]);
-    }
+    // Invalidate cached branches and trigger recalculation if query parameter, name, or chain flag changes
+    const needsRecalc = name !== current.name || address !== current.address || lat !== current.latitude || lon !== current.longitude || isChainVal !== current.is_chain;
 
-    // Update commute times for all apartments to this POI since address changed
-    if (address !== current.address || lat !== current.latitude || lon !== current.longitude || isChainVal !== current.is_chain) {
+    if (needsRecalc) {
+      await db.run("DELETE FROM apartment_chain_branches WHERE poi_id = ?", [id]);
+      
       const apartments = await db.all("SELECT * FROM apartments");
       const apiKey = await getGoogleApiKey();
       for (const apt of apartments) {

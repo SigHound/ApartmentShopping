@@ -84,7 +84,15 @@ const createPoiDivIcon = (emoji) => {
 // Map controller to reset center dynamically
 function ChangeMapView({ center, zoom }) {
   const map = useMap();
-  map.setView(center, zoom);
+  useEffect(() => {
+    if (center && center[0] && center[1]) {
+      map.setView(center, zoom);
+      // Force leaflet to recalculate map dimensions to prevent gray/blank screen
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 100);
+    }
+  }, [center, zoom, map]);
   return null;
 }
 
@@ -2632,6 +2640,30 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                     />
                   </div>
                 </div>
+
+                {newPoiIsChain && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Popular Chains:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['H-E-B', 'Walmart', 'Target', 'Trader Joe\'s', 'Whole Foods', 'Costco', 'Starbucks', 'Kroger', '7-Eleven'].map(chain => (
+                        <button
+                          type="button"
+                          key={`chain-badge-${chain}`}
+                          onClick={() => {
+                            setNewPoiAddress(chain);
+                            if (!newPoiName.trim() || newPoiName === '📍') {
+                              setNewPoiName(chain);
+                              setNewPoiIcon(getDefaultPoiEmoji(chain));
+                            }
+                          }}
+                          className="px-2 py-1 bg-slate-900 hover:bg-slate-850 hover:border-slate-700 text-[10px] font-bold rounded-lg text-cyan-400 hover:text-cyan-300 border border-slate-800 transition duration-150"
+                        >
+                          {chain}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Chain Toggler */}
                 <div className="flex items-center gap-2 py-1 select-none">
