@@ -844,12 +844,14 @@ app.put('/api/apartments/:id', upload.single('floorplan'), async (req, res) => {
       floorplan_image = `/uploads/${filename}`;
     }
 
+    const addressChanged = address !== current.address;
+
     // Geocode if address changed or if coords are null
     let lat = (latitude !== undefined && latitude !== null && latitude !== '') ? parseFloat(latitude) : null;
     let lon = (longitude !== undefined && longitude !== null && longitude !== '') ? parseFloat(longitude) : null;
 
-    if (lat === null || lon === null || isNaN(lat) || isNaN(lon) || address !== current.address) {
-      if (address !== current.address || lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
+    if (lat === null || lon === null || isNaN(lat) || isNaN(lon) || addressChanged) {
+      if (addressChanged || lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
         const geocoded = await geocodeAddress(address);
         lat = geocoded.lat;
         lon = geocoded.lon;
