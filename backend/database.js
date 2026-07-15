@@ -94,6 +94,7 @@ function initializeDatabase() {
       address TEXT,
       latitude REAL,
       longitude REAL,
+      icon TEXT DEFAULT '📍',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -110,6 +111,9 @@ function initializeDatabase() {
     )`);
 
     // Migration for existing databases
+    db.run(`ALTER TABLE pois ADD COLUMN icon TEXT DEFAULT '📍';`, (err) => {
+      // Safely ignore error if column already exists
+    });
     db.run(`ALTER TABLE apartment_distances RENAME COLUMN distance_km TO distance_miles;`, (err) => {
       // Safely ignore error if it fails (e.g. column already renamed, or table doesn't exist yet)
     });

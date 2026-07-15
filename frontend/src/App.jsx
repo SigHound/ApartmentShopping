@@ -69,14 +69,15 @@ const apartmentMarkerIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
-const poiMarkerIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-cyan.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
+const createPoiDivIcon = (emoji) => {
+  return L.divIcon({
+    html: `<div class="flex items-center justify-center bg-slate-900 border-2 border-cyan-400 text-base rounded-full shadow-lg" style="width: 28px; height: 28px; line-height: 1;">${emoji || '📍'}</div>`,
+    className: 'poi-custom-marker-wrapper',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14]
+  });
+};
 
 // Map controller to reset center dynamically
 function ChangeMapView({ center, zoom }) {
@@ -473,12 +474,14 @@ export default function App() {
   const handleSaveApiKey = (key) => handleSaveSetting('GOOGLE_MAPS_API_KEY', key);
 
   // Add Point of Interest (POI)
-  const handleAddPoi = async (name, address) => {
+  const handleAddPoi = async (name, address, icon) => {
+    const finalIcon = icon || '📍';
     if (isStandalone) {
       const newPoi = {
         id: Date.now(),
         name,
-        address
+        address,
+        icon: finalIcon
       };
       
       const coords = await clientGeocode(address);
@@ -511,7 +514,7 @@ export default function App() {
         const res = await fetch(`${API_URL}/api/pois`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, address })
+          body: JSON.stringify({ name, address, icon: finalIcon })
         });
         const newPoi = await res.json();
         setPois(prev => [...prev, newPoi]);
@@ -795,6 +798,20 @@ const getPriorityLabel = (w) => {
   return 'Nice to Have';
 };
 
+// Default POI Emojis by name
+const getDefaultPoiEmoji = (name = '') => {
+  const lower = name.toLowerCase();
+  if (lower.includes('work')) return '💼';
+  if (lower.includes('office')) return '🏢';
+  if (lower.includes('gym') || lower.includes('workout') || lower.includes('fitness')) return '🏋️';
+  if (lower.includes('grocery') || lower.includes('market') || lower.includes('trader') || lower.includes('whole foods') || lower.includes('heb') || lower.includes('target') || lower.includes('store') || lower.includes('shop')) return '🛒';
+  if (lower.includes('park') || lower.includes('trail') || lower.includes('outdoor') || lower.includes('nature') || lower.includes('lake') || lower.includes('beach')) return '🌳';
+  if (lower.includes('coffee') || lower.includes('cafe') || lower.includes('starbucks') || lower.includes('dunkin')) return '☕';
+  if (lower.includes('restaurant') || lower.includes('food') || lower.includes('eat') || lower.includes('dinner') || lower.includes('lunch') || lower.includes('bar') || lower.includes('pub')) return '🍴';
+  if (lower.includes('school') || lower.includes('university') || lower.includes('college') || lower.includes('class')) return '🎓';
+  return '📍';
+};
+
 // Reusable premium discrete BeadedSlider component
 function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary' }) {
   const steps = [];
@@ -871,7 +888,7 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
       return {
         name: apt.name,
         'My Score': apt.userScore,
-        "GF's Score": apt.partnerScore,
+        "Partner's Score": apt.partnerScore,
         'Combined Match': apt.combinedScore
       };
     });
@@ -994,7 +1011,7 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                     ) : (
                       <>
                         <Bar dataKey="My Score" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="GF's Score" fill="#ec4899" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Partner's Score" fill="#ec4899" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="Combined Match" fill="#06b6d4" radius={[4, 4, 0, 0]} />
                       </>
                     )}
@@ -1051,7 +1068,7 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                             </div>
                             <div className="text-right text-xs text-slate-500 border-l border-slate-800 pl-4 space-y-0.5">
                               <p>Me: <span className="font-semibold text-purple-400">{apt.userScore !== null ? `${apt.userScore}%` : '--'}</span></p>
-                              <p>GF: <span className="font-semibold text-pink-400">{apt.partnerScore !== null ? `${apt.partnerScore}%` : '--'}</span></p>
+                              <p>Partner: <span className="font-semibold text-pink-400">{apt.partnerScore !== null ? `${apt.partnerScore}%` : '--'}</span></p>
                             </div>
                           </>
                         )}
@@ -1135,15 +1152,15 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                     <Marker 
                       key={`poi-${poi.id}`} 
                       position={[poi.latitude, poi.longitude]} 
-                      icon={poiMarkerIcon}
+                      icon={createPoiDivIcon(poi.icon)}
                     >
                       <Popup>
-                        <div className="p-1 font-sans">
-                          <h4 className="font-bold text-white text-sm flex items-center gap-1">
-                            <MapPin className="h-4 w-4 text-cyan-400" />
+                        <div className="p-1 font-sans text-slate-100 w-44">
+                          <h4 className="font-bold text-white text-sm flex items-center gap-1.5">
+                            <span className="text-base">{poi.icon || '📍'}</span>
                             {poi.name}
                           </h4>
-                          <p className="text-xs text-slate-400 mt-1">{poi.address}</p>
+                          <p className="text-[11px] text-slate-400 mt-1 leading-normal">{poi.address || 'No Address'}</p>
                         </div>
                       </Popup>
                     </Marker>
@@ -1292,20 +1309,20 @@ function ListingsView({
       
       {/* Filter and Search Bar Dashboard */}
       <div className="glass-card p-6 rounded-2xl space-y-4 relative z-20">
-        <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-          
-          {/* Search Box */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by apartment name or address..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-slate-950/80 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm transition"
-            />
-          </div>
+        {/* Row 1: Search Box (Full Width) */}
+        <div className="relative w-full">
+          <Search className="absolute left-4 top-4.5 h-4.5 w-4.5 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by apartment name or address..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-11 pr-4 py-3.5 bg-slate-950/80 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm transition text-slate-200"
+          />
+        </div>
 
+        {/* Row 2: Secondary Filters */}
+        <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
           <div className="flex flex-wrap items-center gap-3">
             {/* Sort Dropdown */}
             <div className="relative flex items-center bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2">
@@ -1320,7 +1337,7 @@ function ListingsView({
                 </option>
                 <option value="my_score" className="bg-slate-950 text-slate-200">My Score</option>
                 {settings.SHOPPING_MODE !== 'single' && (
-                  <option value="partner_score" className="bg-slate-950 text-slate-200">GF's Score</option>
+                  <option value="partner_score" className="bg-slate-950 text-slate-200">Partner's Score</option>
                 )}
                 <option value="rent" className="bg-slate-950 text-slate-200">Rent Price</option>
                 <option value="google_review" className="bg-slate-950 text-slate-200">Google Review</option>
@@ -1628,7 +1645,7 @@ function ListingsView({
                           <p className="text-lg font-extrabold text-slate-100 mt-0.5">{apt.userScore !== null ? `${apt.userScore}%` : '--'}</p>
                         </div>
                         <div className="text-center border-l border-slate-800/80">
-                          <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">GF's Score</p>
+                          <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">Partner's Score</p>
                           <p className="text-lg font-extrabold text-slate-100 mt-0.5">{apt.partnerScore !== null ? `${apt.partnerScore}%` : '--'}</p>
                         </div>
                       </div>
@@ -1982,6 +1999,12 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const [apiKeyInput, setApiKeyInput] = useState(settings.GOOGLE_MAPS_API_KEY || '');
   const [newPoiName, setNewPoiName] = useState('');
   const [newPoiAddress, setNewPoiAddress] = useState('');
+  const [newPoiIcon, setNewPoiIcon] = useState('📍');
+
+  const handlePoiNameChange = (val) => {
+    setNewPoiName(val);
+    setNewPoiIcon(getDefaultPoiEmoji(val));
+  };
 
   const handleApiKeySubmit = (e) => {
     e.preventDefault();
@@ -1991,9 +2014,10 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const handlePoiSubmit = (e) => {
     e.preventDefault();
     if (!newPoiName.trim()) return;
-    onAddPoi(newPoiName.trim(), newPoiAddress.trim());
+    onAddPoi(newPoiName.trim(), newPoiAddress.trim(), newPoiIcon);
     setNewPoiName('');
     setNewPoiAddress('');
+    setNewPoiIcon('📍');
   };
 
   return (
@@ -2122,7 +2146,10 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
             {pois.map(poi => (
               <div key={`poi-row-${poi.id}`} className="flex items-center justify-between pt-3 first:pt-0">
                 <div>
-                  <h4 className="font-semibold text-slate-200 text-sm">{poi.name}</h4>
+                  <h4 className="font-semibold text-slate-200 text-sm flex items-center gap-1.5">
+                    <span className="text-base select-none">{poi.icon || '📍'}</span>
+                    {poi.name}
+                  </h4>
                   <p className="text-xs text-slate-500 mt-0.5">{poi.address || 'Manual entries'}</p>
                 </div>
                 <button
@@ -2147,7 +2174,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                   type="text"
                   placeholder="e.g., Partner Office, Trader Joe's"
                   value={newPoiName}
-                  onChange={(e) => setNewPoiName(e.target.value)}
+                  onChange={(e) => handlePoiNameChange(e.target.value)}
                   className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
                   required
                 />
@@ -2162,6 +2189,40 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                   className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
                 />
               </div>
+            </div>
+
+            {/* Custom Emoji Selector */}
+            <div className="space-y-2">
+              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Map Marker Emoji</label>
+              <div className="flex flex-wrap gap-2 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                {['📍', '💼', '🏢', '🏋️', '🛒', '🌳', '☕', '🍴', '🎓', '🏠', '💑', '🏥', '🏖️'].map(emoji => (
+                  <button
+                    type="button"
+                    key={`emoji-select-${emoji}`}
+                    onClick={() => setNewPoiIcon(emoji)}
+                    className={`w-9 h-9 text-lg rounded-lg flex items-center justify-center border transition-all duration-200 ${
+                      newPoiIcon === emoji 
+                        ? 'bg-cyan-600/20 border-cyan-500 scale-110 shadow shadow-cyan-500/30' 
+                        : 'border-slate-850 bg-slate-900/50 hover:bg-slate-900 hover:border-slate-700'
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+                
+                {/* Manual emoji input if they want to type one */}
+                <input
+                  type="text"
+                  maxLength="2"
+                  value={newPoiIcon}
+                  onChange={(e) => setNewPoiIcon(e.target.value)}
+                  className="w-12 h-9 px-2 text-center bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-cyan-500 font-bold"
+                  title="Type any custom emoji"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Markers will automatically update on the interactive GeoNest map with your selected emoji.
+              </p>
             </div>
             <button
               type="submit"
@@ -2739,7 +2800,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                       {settings.SHOPPING_MODE !== 'single' && (
                         <div className="space-y-1">
                           <div className="flex justify-between text-slate-400 font-semibold">
-                            <span>GF:</span>
+                            <span>Partner:</span>
                             <span className="font-mono text-pink-400 font-bold">
                               {crit.partner_weight} <span className="text-[8px] text-slate-500 font-normal ml-0.5">({getPriorityLabel(crit.partner_weight)})</span>
                             </span>

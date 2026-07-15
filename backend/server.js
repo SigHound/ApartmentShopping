@@ -207,16 +207,30 @@ app.get('/api/pois', async (req, res) => {
   }
 });
 
+function getDefaultPoiEmoji(name = '') {
+  const lower = name.toLowerCase();
+  if (lower.includes('work')) return '💼';
+  if (lower.includes('office')) return '🏢';
+  if (lower.includes('gym') || lower.includes('workout') || lower.includes('fitness')) return '🏋️';
+  if (lower.includes('grocery') || lower.includes('market') || lower.includes('trader') || lower.includes('whole foods') || lower.includes('heb') || lower.includes('target') || lower.includes('store') || lower.includes('shop')) return '🛒';
+  if (lower.includes('park') || lower.includes('trail') || lower.includes('outdoor') || lower.includes('nature') || lower.includes('lake') || lower.includes('beach')) return '🌳';
+  if (lower.includes('coffee') || lower.includes('cafe') || lower.includes('starbucks') || lower.includes('dunkin')) return '☕';
+  if (lower.includes('restaurant') || lower.includes('food') || lower.includes('eat') || lower.includes('dinner') || lower.includes('lunch') || lower.includes('bar') || lower.includes('pub')) return '🍴';
+  if (lower.includes('school') || lower.includes('university') || lower.includes('college') || lower.includes('class')) return '🎓';
+  return '📍';
+}
+
 app.post('/api/pois', async (req, res) => {
-  const { name, address } = req.body;
+  const { name, address, icon } = req.body;
   if (!name) return res.status(400).json({ error: 'POI Name is required' });
+  const finalIcon = icon || getDefaultPoiEmoji(name);
   try {
     const { lat, lon } = await geocodeAddress(address);
-    const result = await db.run("INSERT INTO pois (name, address, latitude, longitude) VALUES (?, ?, ?, ?)", 
-      [name, address || '', lat, lon]
+    const result = await db.run("INSERT INTO pois (name, address, latitude, longitude, icon) VALUES (?, ?, ?, ?, ?)", 
+      [name, address || '', lat, lon, finalIcon]
     );
 
-    const newPoi = { id: result.id, name, address, latitude: lat, longitude: lon };
+    const newPoi = { id: result.id, name, address, latitude: lat, longitude: lon, icon: finalIcon };
 
     // Trigger commute recalculation for all existing apartments to this new POI
     const apartments = await db.all("SELECT * FROM apartments");
@@ -238,7 +252,7 @@ app.post('/api/pois', async (req, res) => {
 
 app.put('/api/pois/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, address } = req.body;
+  const { name, address, icon } = req.body;
   try {
     const current = await db.get("SELECT * FROM pois WHERE id = ?", [id]);
     if (!current) return res.status(404).json({ error: 'POI not found' });
@@ -251,11 +265,13 @@ app.put('/api/pois/:id', async (req, res) => {
       lon = geocoded.lon;
     }
 
-    await db.run("UPDATE pois SET name = ?, address = ?, latitude = ?, longitude = ? WHERE id = ?",
-      [name, address, lat, lon, id]
+    const finalIcon = icon || current.icon || getDefaultPoiEmoji(name);
+
+    await db.run("UPDATE pois SET name = ?, address = ?, latitude = ?, longitude = ?, icon = ? WHERE id = ?",
+      [name, address, lat, lon, finalIcon, id]
     );
 
-    const updatedPoi = { id: parseInt(id), name, address, latitude: lat, longitude: lon };
+    const updatedPoi = { id: parseInt(id), name, address, latitude: lat, longitude: lon, icon: finalIcon };
 
     // Update commute times for all apartments to this POI since address changed
     if (address !== current.address) {
