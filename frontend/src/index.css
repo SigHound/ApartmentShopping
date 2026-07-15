@@ -82,3 +82,44 @@
   background: #0f172a !important;
   border: 1px solid #334155 !important;
 }
+
+/* Custom Beaded Slider Input Thumbs Styling */
+.beaded-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid currentColor;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  cursor: ew-resize;
+  transition: transform 0.15s ease;
+}
+
+.beaded-slider-input::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.beaded-slider-input::-webkit-slider-thumb:active {
+  transform: scale(0.9);
+}
+
+.beaded-slider-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 3px solid currentColor;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  cursor: ew-resize;
+  transition: transform 0.15s ease;
+}
+
+.beaded-slider-input::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.beaded-slider-input::-moz-range-thumb:active {
+  transform: scale(0.9);
+}

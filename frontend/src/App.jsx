@@ -784,7 +784,68 @@ export default function App() {
   );
 }
 
-// ----------------- SUB-COMPONENTS -----------------
+// ----------------- HELPERS & SUB-COMPONENTS -----------------
+
+// Priority weight labels
+const getPriorityLabel = (w) => {
+  if (w === 5) return 'Critical';
+  if (w === 4) return 'High';
+  if (w === 3) return 'Medium';
+  if (w === 2) return 'Low';
+  return 'Nice to Have';
+};
+
+// Reusable premium discrete BeadedSlider component
+function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary' }) {
+  const steps = [];
+  for (let i = min; i <= max; i++) {
+    steps.push(i);
+  }
+  const percentage = ((value - min) / (max - min)) * 100;
+  
+  const accentColor = colorClass === 'primary' ? 'bg-primary-500 text-primary-500' : 'bg-pink-500 text-pink-500';
+  const ringColor = colorClass === 'primary' ? 'ring-primary-500' : 'ring-pink-500';
+  const bgLightColor = colorClass === 'primary' ? 'bg-primary-300' : 'bg-pink-300';
+
+  return (
+    <div className="relative w-full flex items-center h-6 select-none my-1">
+      {/* Background Track */}
+      <div className="absolute left-0 right-0 h-1 bg-slate-800 rounded-full pointer-events-none"></div>
+      
+      {/* Active Fill Track */}
+      <div 
+        className={`absolute left-0 h-1 rounded-full pointer-events-none ${accentColor}`}
+        style={{ width: `${percentage}%` }}
+      ></div>
+
+      {/* Discrete Steps Ticks (Beads) */}
+      <div className="absolute left-0 right-0 h-1 flex justify-between pointer-events-none px-1">
+        {steps.map((val) => {
+          const isActive = val <= value;
+          return (
+            <span 
+              key={val} 
+              className={`w-1.5 h-1.5 rounded-full -translate-y-[1px] transition-all duration-200 ${
+                isActive ? `${bgLightColor} ring-[3px] ${ringColor} scale-110` : 'bg-slate-700'
+              }`}
+            ></span>
+          );
+        })}
+      </div>
+
+      {/* Range Input */}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value))}
+        className={`absolute inset-0 w-full h-full appearance-none bg-transparent cursor-ew-resize focus:outline-none z-10 beaded-slider-input ${accentColor}`}
+        style={{ WebkitAppearance: 'none' }}
+      />
+    </div>
+  );
+}
 
 // 1. DASHBOARD VIEW
 function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavigate }) {
@@ -1034,12 +1095,33 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                       icon={apartmentMarkerIcon}
                     >
                       <Popup>
-                        <div className="space-y-2 p-1 font-sans">
-                          <h4 className="font-bold text-base text-white">{apt.name}</h4>
-                          <p className="text-xs text-slate-400">{apt.address}</p>
-                          <div className="flex justify-between items-center gap-4 text-xs font-semibold pt-1 border-t border-slate-800 mt-2">
+                        <div className="space-y-2 p-1 font-sans w-52 text-slate-100">
+                          <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
+                          <p className="text-[11px] text-slate-400 leading-normal line-clamp-2">{apt.address || 'Address not listed'}</p>
+                          
+                          {(apt.bedrooms || apt.bathrooms) && (
+                            <div className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                              <span>{apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}</span>
+                              <span>•</span>
+                              <span>{apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}</span>
+                            </div>
+                          )}
+
+                          {apt.floorplan_image && (
+                            <div className="w-full h-20 rounded-lg overflow-hidden border border-slate-800 bg-slate-950 mt-1.5">
+                              <img 
+                                src={`${API_URL}${apt.floorplan_image}`} 
+                                alt="Floorplan preview" 
+                                className="w-full h-full object-cover opacity-80"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-center gap-4 text-xs font-bold pt-1.5 border-t border-slate-805 mt-2">
                             <span className="text-emerald-400">${apt.rent ? apt.rent.toLocaleString() : '--'}/mo</span>
-                            <span className="text-indigo-400">Match: {apt.combinedScore}%</span>
+                            <span className="text-primary-400">
+                              {apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--'}
+                            </span>
                           </div>
                         </div>
                       </Popup>
@@ -1856,15 +1938,16 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
               <span className="w-4 h-4 bg-primary-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">U</span>
               {settings.SHOPPING_MODE === 'single' ? 'Importance Weight' : 'My Weight'}
             </span>
-            <span className="font-mono text-primary-400 font-bold">{item.user_weight}</span>
+            <span className="font-mono text-primary-400 font-bold">
+              {item.user_weight} <span className="text-[10px] text-slate-500 font-semibold ml-1">({getPriorityLabel(item.user_weight)})</span>
+            </span>
           </div>
-          <input
-            type="range"
+          <BeadedSlider
+            value={item.user_weight}
+            onChange={(val) => onWeightChange(item.id, 'user', val)}
             min={minVal}
             max={maxVal}
-            value={item.user_weight}
-            onChange={(e) => onWeightChange(item.id, 'user', parseInt(e.target.value))}
-            className="w-full accent-primary-500 cursor-ew-resize bg-slate-950 h-1.5 rounded-lg appearance-none"
+            colorClass="primary"
           />
         </div>
 
@@ -1876,15 +1959,16 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
                 <span className="w-4 h-4 bg-pink-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">P</span>
                 Partner's Weight
               </span>
-              <span className="font-mono text-pink-400 font-bold">{item.partner_weight}</span>
+              <span className="font-mono text-pink-400 font-bold">
+                {item.partner_weight} <span className="text-[10px] text-slate-500 font-semibold ml-1">({getPriorityLabel(item.partner_weight)})</span>
+              </span>
             </div>
-            <input
-              type="range"
+            <BeadedSlider
+              value={item.partner_weight}
+              onChange={(val) => onWeightChange(item.id, 'partner', val)}
               min={minVal}
               max={maxVal}
-              value={item.partner_weight}
-              onChange={(e) => onWeightChange(item.id, 'partner', parseInt(e.target.value))}
-              className="w-full accent-pink-500 cursor-ew-resize bg-slate-950 h-1.5 rounded-lg appearance-none"
+              colorClass="pink"
             />
           </div>
         )}
@@ -2569,25 +2653,23 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                     <label className="text-[10px] text-slate-400 font-semibold uppercase">
                       {settings.SHOPPING_MODE === 'single' ? `Importance Weight (${newCritUserWeight})` : `My Weight (${newCritUserWeight})`}
                     </label>
-                    <input
-                      type="range"
+                    <BeadedSlider
+                      value={newCritUserWeight}
+                      onChange={(val) => setNewCritUserWeight(val)}
                       min={1}
                       max={5}
-                      value={newCritUserWeight}
-                      onChange={(e) => setNewCritUserWeight(parseInt(e.target.value))}
-                      className="w-full accent-primary-500 h-1 bg-slate-950 rounded"
+                      colorClass="primary"
                     />
                   </div>
                   {settings.SHOPPING_MODE !== 'single' && (
                     <div className="space-y-1">
                       <label className="text-[10px] text-slate-400 font-semibold uppercase">Partner Weight ({newCritPartnerWeight})</label>
-                      <input
-                        type="range"
+                      <BeadedSlider
+                        value={newCritPartnerWeight}
+                        onChange={(val) => setNewCritPartnerWeight(val)}
                         min={1}
                         max={5}
-                        value={newCritPartnerWeight}
-                        onChange={(e) => setNewCritPartnerWeight(parseInt(e.target.value))}
-                        className="w-full accent-pink-500 h-1 bg-slate-950 rounded"
+                        colorClass="pink"
                       />
                     </div>
                   )}
@@ -2638,35 +2720,39 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                     </div>
 
                     {/* Compact Weight Sliders */}
-                    <div className="mt-3.5 pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-3 text-[10px]">
+                    <div className={settings.SHOPPING_MODE === 'single' ? "mt-3.5 pt-2 border-t border-slate-800/80 text-[10px] space-y-2" : "mt-3.5 pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-3 text-[10px]"}>
                       <div className="space-y-1">
-                        <div className="flex justify-between text-slate-400 font-medium">
-                          <span>Me:</span>
-                          <span className="font-mono text-primary-400 font-bold">{crit.user_weight}</span>
+                        <div className="flex justify-between text-slate-400 font-semibold">
+                          <span>{settings.SHOPPING_MODE === 'single' ? 'Importance:' : 'Me:'}</span>
+                          <span className="font-mono text-primary-400 font-bold">
+                            {crit.user_weight} <span className="text-[8px] text-slate-500 font-normal ml-0.5">({getPriorityLabel(crit.user_weight)})</span>
+                          </span>
                         </div>
-                        <input
-                          type="range"
-                          min={1}
-                          max={5}
+                        <BeadedSlider
                           value={crit.user_weight}
-                          onChange={(e) => onWeightChange(crit.id, 'user', parseInt(e.target.value))}
-                          className="w-full accent-primary-500 cursor-ew-resize bg-slate-950 h-1 rounded"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-slate-400 font-medium">
-                          <span>GF:</span>
-                          <span className="font-mono text-pink-400 font-bold">{crit.partner_weight}</span>
-                        </div>
-                        <input
-                          type="range"
+                          onChange={(val) => onWeightChange(crit.id, 'user', val)}
                           min={1}
                           max={5}
-                          value={crit.partner_weight}
-                          onChange={(e) => onWeightChange(crit.id, 'partner', parseInt(e.target.value))}
-                          className="w-full accent-pink-500 cursor-ew-resize bg-slate-950 h-1 rounded"
+                          colorClass="primary"
                         />
                       </div>
+                      {settings.SHOPPING_MODE !== 'single' && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-slate-400 font-semibold">
+                            <span>GF:</span>
+                            <span className="font-mono text-pink-400 font-bold">
+                              {crit.partner_weight} <span className="text-[8px] text-slate-500 font-normal ml-0.5">({getPriorityLabel(crit.partner_weight)})</span>
+                            </span>
+                          </div>
+                          <BeadedSlider
+                            value={crit.partner_weight}
+                            onChange={(val) => onWeightChange(crit.id, 'partner', val)}
+                            min={1}
+                            max={5}
+                            colorClass="pink"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
