@@ -206,13 +206,20 @@ export default function App() {
 
   // Recalculate scores client-side whenever apartments or criteria weights change
   const getNormalizedScores = (apt) => {
+    // If the apartment has no attributes associated at all, return null
+    const activeAptCriteria = apt.criteria?.filter(ac => ac.value === 1) || [];
+    if (activeAptCriteria.length === 0 || criteria.length === 0) {
+      return {
+        userScore: null,
+        partnerScore: null,
+        combinedScore: null
+      };
+    }
+
     // 1. Separate criteria by type (pro/con)
     const pros = criteria.filter(c => c.type === 'pro');
     const cons = criteria.filter(c => c.type === 'con');
 
-    // Max possible weights: sum of all positive user/partner weights for pros.
-    // Min possible weights: subtraction of all positive user/partner weights for cons.
-    
     let maxUser = 0;
     let minUser = 0; // Negative limit
     let maxPartner = 0;
@@ -266,8 +273,10 @@ export default function App() {
       partnerScore = Math.round(((rawPartner - minPartner) / (maxPartner - minPartner)) * 100);
     }
 
-    // Combined score (Average of both)
-    const combinedScore = Math.round((userScore + partnerScore) / 2);
+    // Combined score (Average of both, or just user score if single)
+    const combinedScore = settings.SHOPPING_MODE === 'single' 
+      ? userScore 
+      : Math.round((userScore + partnerScore) / 2);
 
     return {
       userScore: Math.max(0, Math.min(100, userScore)),
@@ -314,9 +323,21 @@ export default function App() {
       return matchesSearch && matchesRent && matchesCriteria && matchesRating && matchesBeds && matchesBaths;
     })
     .sort((a, b) => {
-      if (sortBy === 'combined_score') return b.combinedScore - a.combinedScore;
-      if (sortBy === 'my_score') return b.userScore - a.userScore;
-      if (sortBy === 'partner_score') return b.partnerScore - a.partnerScore;
+      if (sortBy === 'combined_score') {
+        const valA = a.combinedScore !== null ? a.combinedScore : -1;
+        const valB = b.combinedScore !== null ? b.combinedScore : -1;
+        return valB - valA;
+      }
+      if (sortBy === 'my_score') {
+        const valA = a.userScore !== null ? a.userScore : -1;
+        const valB = b.userScore !== null ? b.userScore : -1;
+        return valB - valA;
+      }
+      if (sortBy === 'partner_score') {
+        const valA = a.partnerScore !== null ? a.partnerScore : -1;
+        const valB = b.partnerScore !== null ? b.partnerScore : -1;
+        return valB - valA;
+      }
       if (sortBy === 'rent') return (a.rent || 99999) - (b.rent || 99999);
       if (sortBy === 'google_review') return (b.google_review_score || 0) - (a.google_review_score || 0);
       return 0;
@@ -423,27 +444,33 @@ export default function App() {
     }
   };
 
-  // Settings Save API Key
-  const handleSaveApiKey = async (key) => {
+  // Settings Save Setting Key-Value
+  const handleSaveSetting = async (key, val) => {
     if (isStandalone) {
-      const updatedSettings = { ...settings, GOOGLE_MAPS_API_KEY: key };
+      const updatedSettings = { ...settings, [key]: val };
       setSettings(updatedSettings);
       localStorage.setItem('vibenest_settings', JSON.stringify(updatedSettings));
-      alert('Google Maps API key saved in browser settings!');
+      if (key === 'GOOGLE_MAPS_API_KEY') {
+        alert('Google Maps API key saved in browser settings!');
+      }
     } else {
       try {
         await fetch(`${API_URL}/api/settings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: 'GOOGLE_MAPS_API_KEY', value: key })
+          body: JSON.stringify({ key, value: val })
         });
-        setSettings(prev => ({ ...prev, GOOGLE_MAPS_API_KEY: key }));
-        alert('Google Maps API key saved successfully!');
+        setSettings(prev => ({ ...prev, [key]: val }));
+        if (key === 'GOOGLE_MAPS_API_KEY') {
+          alert('Google Maps API key saved successfully!');
+        }
       } catch (err) {
-        console.error('Error saving API Key:', err);
+        console.error(`Error saving setting ${key}:`, err);
       }
     }
   };
+
+  const handleSaveApiKey = (key) => handleSaveSetting('GOOGLE_MAPS_API_KEY', key);
 
   // Add Point of Interest (POI)
   const handleAddPoi = async (name, address) => {
@@ -661,6 +688,7 @@ export default function App() {
                 scoredApartments={scoredApartments} 
                 pois={pois} 
                 criteria={criteria} 
+                settings={settings}
                 onNavigate={(tab) => setActiveTab(tab)} 
               />
             )}
@@ -671,6 +699,7 @@ export default function App() {
                 allScoredApartments={scoredApartments}
                 pois={pois}
                 criteria={criteria}
+                settings={settings}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 priceRange={priceRange}
@@ -687,7 +716,7 @@ export default function App() {
                 setMinBaths={setMinBaths}
                 onDelete={handleDeleteApartment}
                 onEdit={(apt) => { setEditingApartment(apt); setIsAddModalOpen(true); }}
-                onAddClick={() => { setEditingApartment(null); setIsAddModalOpen(true); }}
+                onAddClick={(apt) => { setEditingApartment(null); setIsAddModalOpen(true); }}
                 hoveredFloorplan={hoveredFloorplan}
                 setHoveredFloorplan={setHoveredFloorplan}
               />
@@ -696,6 +725,7 @@ export default function App() {
             {activeTab === 'criteria' && (
               <CriteriaView 
                 criteria={criteria} 
+                settings={settings}
                 onWeightChange={handleWeightChange} 
                 onAddCriteria={handleAddCriteria} 
                 onDeleteCriteria={handleDeleteCriteria} 
@@ -707,6 +737,7 @@ export default function App() {
                 settings={settings} 
                 pois={pois} 
                 onSaveApiKey={handleSaveApiKey} 
+                onSaveSetting={handleSaveSetting}
                 onAddPoi={handleAddPoi} 
                 onDeletePoi={handleDeletePoi} 
                 onExportData={handleExportData}
@@ -741,6 +772,7 @@ export default function App() {
           apartment={editingApartment} 
           pois={pois}
           criteria={criteria}
+          settings={settings}
           isStandalone={isStandalone}
           onWeightChange={handleWeightChange}
           onAddCriteria={handleAddCriteria}
@@ -755,25 +787,33 @@ export default function App() {
 // ----------------- SUB-COMPONENTS -----------------
 
 // 1. DASHBOARD VIEW
-function DashboardView({ scoredApartments, pois, criteria, onNavigate }) {
+function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavigate }) {
   const totalListings = scoredApartments.length;
   const avgRent = totalListings > 0 
     ? Math.round(scoredApartments.reduce((acc, a) => acc + (a.rent || 0), 0) / totalListings) 
     : 0;
   const bestMatch = totalListings > 0 
-    ? [...scoredApartments].sort((a, b) => b.combinedScore - a.combinedScore)[0] 
+    ? [...scoredApartments].sort((a, b) => (b.combinedScore || 0) - (a.combinedScore || 0))[0] 
     : null;
 
   // Prepare chart data (top 5 scoring apartments)
   const chartData = [...scoredApartments]
-    .sort((a, b) => b.combinedScore - a.combinedScore)
+    .sort((a, b) => (b.combinedScore || 0) - (a.combinedScore || 0))
     .slice(0, 5)
-    .map(apt => ({
-      name: apt.name,
-      'My Score': apt.userScore,
-      "GF's Score": apt.partnerScore,
-      'Combined Match': apt.combinedScore
-    }));
+    .map(apt => {
+      if (settings.SHOPPING_MODE === 'single') {
+        return {
+          name: apt.name,
+          'Match Score': apt.userScore
+        };
+      }
+      return {
+        name: apt.name,
+        'My Score': apt.userScore,
+        "GF's Score": apt.partnerScore,
+        'Combined Match': apt.combinedScore
+      };
+    });
 
   // Average commute times
   const computeAvgPOICommute = (poiId) => {
@@ -849,7 +889,7 @@ function DashboardView({ scoredApartments, pois, criteria, onNavigate }) {
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Highest Match</p>
             <h3 className="text-2xl font-bold mt-1">
-              {bestMatch ? `${bestMatch.combinedScore}%` : 'N/A'}
+              {bestMatch ? (bestMatch.combinedScore !== null ? `${bestMatch.combinedScore}%` : '--') : 'N/A'}
             </h3>
           </div>
         </div>
@@ -888,9 +928,15 @@ function DashboardView({ scoredApartments, pois, criteria, onNavigate }) {
                       labelStyle={{ color: '#fff', fontWeight: 'bold' }}
                     />
                     <Legend />
-                    <Bar dataKey="My Score" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="GF's Score" fill="#ec4899" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="Combined Match" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                    {settings.SHOPPING_MODE === 'single' ? (
+                      <Bar dataKey="Match Score" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                    ) : (
+                      <>
+                        <Bar dataKey="My Score" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="GF's Score" fill="#ec4899" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Combined Match" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                      </>
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -927,14 +973,27 @@ function DashboardView({ scoredApartments, pois, criteria, onNavigate }) {
                       </div>
 
                       <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-xs text-slate-500">Combined</p>
-                          <p className="font-bold text-primary-400">{apt.combinedScore}%</p>
-                        </div>
-                        <div className="text-right text-xs text-slate-500 border-l border-slate-800 pl-4 space-y-0.5">
-                          <p>Me: <span className="font-semibold text-purple-400">{apt.userScore}%</span></p>
-                          <p>GF: <span className="font-semibold text-pink-400">{apt.partnerScore}%</span></p>
-                        </div>
+                        {settings.SHOPPING_MODE === 'single' ? (
+                          <div className="text-right">
+                            <p className="text-xs text-slate-500">Match</p>
+                            <p className="font-bold text-primary-400">
+                              {apt.combinedScore !== null ? `${apt.combinedScore}%` : '--'}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="text-right">
+                              <p className="text-xs text-slate-500">Combined</p>
+                              <p className="font-bold text-primary-400">
+                                {apt.combinedScore !== null ? `${apt.combinedScore}%` : '--'}
+                              </p>
+                            </div>
+                            <div className="text-right text-xs text-slate-500 border-l border-slate-800 pl-4 space-y-0.5">
+                              <p>Me: <span className="font-semibold text-purple-400">{apt.userScore !== null ? `${apt.userScore}%` : '--'}</span></p>
+                              <p>GF: <span className="font-semibold text-pink-400">{apt.partnerScore !== null ? `${apt.partnerScore}%` : '--'}</span></p>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1028,6 +1087,7 @@ function ListingsView({
   allScoredApartments,
   pois, 
   criteria, 
+  settings = {},
   searchQuery, 
   setSearchQuery, 
   priceRange, 
@@ -1171,11 +1231,15 @@ function ListingsView({
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="bg-transparent text-sm font-semibold focus:outline-none cursor-pointer"
+                className="bg-transparent text-sm font-semibold focus:outline-none cursor-pointer text-slate-200"
               >
-                <option value="combined_score" className="bg-slate-950 text-slate-200">Combined Match</option>
+                <option value="combined_score" className="bg-slate-950 text-slate-200">
+                  {settings.SHOPPING_MODE === 'single' ? 'Match Score' : 'Combined Match'}
+                </option>
                 <option value="my_score" className="bg-slate-950 text-slate-200">My Score</option>
-                <option value="partner_score" className="bg-slate-950 text-slate-200">GF's Score</option>
+                {settings.SHOPPING_MODE !== 'single' && (
+                  <option value="partner_score" className="bg-slate-950 text-slate-200">GF's Score</option>
+                )}
                 <option value="rent" className="bg-slate-950 text-slate-200">Rent Price</option>
                 <option value="google_review" className="bg-slate-950 text-slate-200">Google Review</option>
               </select>
@@ -1396,7 +1460,7 @@ function ListingsView({
                   {/* Top rating overlay */}
                   <div className="absolute top-4 right-4 flex gap-1.5">
                     <span className="px-2.5 py-1 bg-primary-600/90 backdrop-blur-md rounded-lg text-xs font-bold text-white shadow-lg shadow-primary-500/25">
-                      {apt.combinedScore}% Match
+                      {apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--'}
                     </span>
                   </div>
 
@@ -1472,19 +1536,21 @@ function ListingsView({
                   {/* Scores and Commute Info block */}
                   <div className={viewFormat === 'grid' ? "" : "grid grid-cols-1 sm:grid-cols-2 gap-4 my-4 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/80"}>
                     {/* Scores breakdown preview */}
-                    <div className={viewFormat === 'grid' 
-                      ? "grid grid-cols-2 gap-4 my-5 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80" 
-                      : "grid grid-cols-2 gap-4 flex-1 items-center"
-                    }>
-                      <div className="text-center">
-                        <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">My Score</p>
-                        <p className="text-lg font-extrabold text-slate-100 mt-0.5">{apt.userScore}%</p>
+                    {settings.SHOPPING_MODE !== 'single' && (
+                      <div className={viewFormat === 'grid' 
+                        ? "grid grid-cols-2 gap-4 my-5 bg-slate-950/40 p-3 rounded-xl border border-slate-800/80" 
+                        : "grid grid-cols-2 gap-4 flex-1 items-center"
+                      }>
+                        <div className="text-center">
+                          <p className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">My Score</p>
+                          <p className="text-lg font-extrabold text-slate-100 mt-0.5">{apt.userScore !== null ? `${apt.userScore}%` : '--'}</p>
+                        </div>
+                        <div className="text-center border-l border-slate-800/80">
+                          <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">GF's Score</p>
+                          <p className="text-lg font-extrabold text-slate-100 mt-0.5">{apt.partnerScore !== null ? `${apt.partnerScore}%` : '--'}</p>
+                        </div>
                       </div>
-                      <div className="text-center border-l border-slate-800/80">
-                        <p className="text-[10px] uppercase font-bold text-pink-400 tracking-wider">GF's Score</p>
-                        <p className="text-lg font-extrabold text-slate-100 mt-0.5">{apt.partnerScore}%</p>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Quick Commute details */}
                     {apt.distances && apt.distances.length > 0 && (
@@ -1626,7 +1692,7 @@ function ListingsView({
 }
 
 // 3. CRITERIA & WEIGHTS SLIDERS VIEW (Dual Slider weights configuration)
-function CriteriaView({ criteria, onWeightChange, onAddCriteria, onDeleteCriteria }) {
+function CriteriaView({ criteria, settings = {}, onWeightChange, onAddCriteria, onDeleteCriteria }) {
   const [newCritName, setNewCritName] = useState('');
   const [newCritType, setNewCritType] = useState('pro');
 
@@ -1661,6 +1727,7 @@ function CriteriaView({ criteria, onWeightChange, onAddCriteria, onDeleteCriteri
               <CriteriaWeightItem 
                 key={`cw-${c.id}`}
                 item={c} 
+                settings={settings}
                 onWeightChange={onWeightChange}
                 onDelete={onDeleteCriteria}
                 minVal={1}
@@ -1686,6 +1753,7 @@ function CriteriaView({ criteria, onWeightChange, onAddCriteria, onDeleteCriteri
               <CriteriaWeightItem 
                 key={`cw-${c.id}`}
                 item={c} 
+                settings={settings}
                 onWeightChange={onWeightChange}
                 onDelete={onDeleteCriteria}
                 minVal={1}
@@ -1758,7 +1826,7 @@ function CriteriaView({ criteria, onWeightChange, onAddCriteria, onDeleteCriteri
 }
 
 // Single Criteria Config line with dual sliders (Me / Partner)
-function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal }) {
+function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, settings = {} }) {
   return (
     <div className="py-2 space-y-4">
       <div className="flex justify-between items-center">
@@ -1780,13 +1848,13 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal }) 
       </div>
 
       {/* Slider inputs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-2">
+      <div className={settings.SHOPPING_MODE === 'single' ? "pl-2" : "grid grid-cols-1 md:grid-cols-2 gap-4 pl-2"}>
         {/* User Weight Slider */}
         <div className="space-y-1">
           <div className="flex justify-between text-xs font-medium text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className="w-4 h-4 bg-primary-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">U</span>
-              My Weight
+              {settings.SHOPPING_MODE === 'single' ? 'Importance Weight' : 'My Weight'}
             </span>
             <span className="font-mono text-primary-400 font-bold">{item.user_weight}</span>
           </div>
@@ -1801,30 +1869,32 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal }) 
         </div>
 
         {/* Partner Weight Slider */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs font-medium text-slate-400">
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 bg-pink-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">P</span>
-              Partner's Weight
-            </span>
-            <span className="font-mono text-pink-400 font-bold">{item.partner_weight}</span>
+        {settings.SHOPPING_MODE !== 'single' && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs font-medium text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 bg-pink-500 rounded-full text-[9px] text-white flex items-center justify-center font-bold">P</span>
+                Partner's Weight
+              </span>
+              <span className="font-mono text-pink-400 font-bold">{item.partner_weight}</span>
+            </div>
+            <input
+              type="range"
+              min={minVal}
+              max={maxVal}
+              value={item.partner_weight}
+              onChange={(e) => onWeightChange(item.id, 'partner', parseInt(e.target.value))}
+              className="w-full accent-pink-500 cursor-ew-resize bg-slate-950 h-1.5 rounded-lg appearance-none"
+            />
           </div>
-          <input
-            type="range"
-            min={minVal}
-            max={maxVal}
-            value={item.partner_weight}
-            onChange={(e) => onWeightChange(item.id, 'partner', parseInt(e.target.value))}
-            className="w-full accent-pink-500 cursor-ew-resize bg-slate-950 h-1.5 rounded-lg appearance-none"
-          />
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
 // 4. SETTINGS VIEW (Google Maps API Key, POI Addresses config)
-function SettingsView({ settings, pois, onSaveApiKey, onAddPoi, onDeletePoi, onExportData, onImportData }) {
+function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, onDeletePoi, onExportData, onImportData }) {
   const [apiKeyInput, setApiKeyInput] = useState(settings.GOOGLE_MAPS_API_KEY || '');
   const [newPoiName, setNewPoiName] = useState('');
   const [newPoiAddress, setNewPoiAddress] = useState('');
@@ -1845,8 +1915,42 @@ function SettingsView({ settings, pois, onSaveApiKey, onAddPoi, onDeletePoi, onE
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
       
-      {/* Left panel - API configuration */}
+      {/* Left panel - API configuration & General Preferences */}
       <div className="space-y-6">
+        {/* General Preferences */}
+        <div className="glass-card p-6 rounded-2xl space-y-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Sliders className="h-5 w-5 text-primary-400" />
+            General Preferences
+          </h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Configure how VibeNest scores and displays comparisons.
+          </p>
+
+          <div className="space-y-3">
+            <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Shopping Mode</label>
+            <div className="flex bg-slate-950/85 border border-slate-800 rounded-xl p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => onSaveSetting('SHOPPING_MODE', 'single')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition duration-200 ${settings.SHOPPING_MODE === 'single' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Individual (Single)
+              </button>
+              <button
+                type="button"
+                onClick={() => onSaveSetting('SHOPPING_MODE', 'couple')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition duration-200 ${settings.SHOPPING_MODE !== 'single' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Shared (with Partner)
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1 leading-normal">
+              Selecting "Individual (Single)" simplifies the interface by hiding the partner's score columns, weights, and comparative graphs.
+            </p>
+          </div>
+        </div>
+
         <div className="glass-card p-6 rounded-2xl space-y-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Compass className="h-5 w-5 text-indigo-400" />
@@ -1990,7 +2094,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onAddPoi, onDeletePoi, onE
 }
 
 // 5. APARTMENT ENTRY & EDIT MODAL
-function ApartmentModal({ apartment, pois, criteria, isStandalone, onWeightChange, onAddCriteria, onClose, onSave }) {
+function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone, onWeightChange, onAddCriteria, onClose, onSave }) {
   const [name, setName] = useState(apartment?.name || '');
   const [address, setAddress] = useState(apartment?.address || '');
   const [rent, setRent] = useState(apartment?.rent || '');
@@ -2435,7 +2539,7 @@ function ApartmentModal({ apartment, pois, criteria, isStandalone, onWeightChang
             {showAddCrit && (
               <div className="bg-slate-950/80 border border-slate-800/80 p-4 rounded-2xl space-y-4 animate-fade-in">
                 <p className="text-xs font-bold text-white uppercase tracking-wider">Create New Attribute</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                <div className={settings.SHOPPING_MODE === 'single' ? "grid grid-cols-1 sm:grid-cols-3 gap-4 items-end" : "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end"}>
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 font-semibold uppercase">Attribute Name</label>
                     <input
@@ -2462,27 +2566,31 @@ function ApartmentModal({ apartment, pois, criteria, isStandalone, onWeightChang
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 font-semibold uppercase">My Weight ({newCritUserWeight})</label>
+                    <label className="text-[10px] text-slate-400 font-semibold uppercase">
+                      {settings.SHOPPING_MODE === 'single' ? `Importance Weight (${newCritUserWeight})` : `My Weight (${newCritUserWeight})`}
+                    </label>
                     <input
                       type="range"
-                      min={0}
-                      max={10}
+                      min={1}
+                      max={5}
                       value={newCritUserWeight}
                       onChange={(e) => setNewCritUserWeight(parseInt(e.target.value))}
                       className="w-full accent-primary-500 h-1 bg-slate-950 rounded"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 font-semibold uppercase">Partner Weight ({newCritPartnerWeight})</label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={10}
-                      value={newCritPartnerWeight}
-                      onChange={(e) => setNewCritPartnerWeight(parseInt(e.target.value))}
-                      className="w-full accent-pink-500 h-1 bg-slate-950 rounded"
-                    />
-                  </div>
+                  {settings.SHOPPING_MODE !== 'single' && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-semibold uppercase">Partner Weight ({newCritPartnerWeight})</label>
+                      <input
+                        type="range"
+                        min={1}
+                        max={5}
+                        value={newCritPartnerWeight}
+                        onChange={(e) => setNewCritPartnerWeight(parseInt(e.target.value))}
+                        className="w-full accent-pink-500 h-1 bg-slate-950 rounded"
+                      />
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
