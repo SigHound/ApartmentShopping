@@ -731,14 +731,16 @@ export default function App() {
   const handleSaveApiKey = (key) => handleSaveSetting('GOOGLE_MAPS_API_KEY', key);
 
   // Add Point of Interest (POI)
-  const handleAddPoi = async (name, address, icon) => {
+  const handleAddPoi = async (name, address, icon, isChain) => {
     const finalIcon = icon || '📍';
+    const isChainVal = isChain ? 1 : 0;
     if (isStandalone) {
       const newPoi = {
         id: Date.now(),
         name,
         address,
-        icon: finalIcon
+        icon: finalIcon,
+        is_chain: isChainVal
       };
       
       const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
@@ -778,11 +780,17 @@ export default function App() {
       localStorage.setItem('vibenest_apartments', JSON.stringify(updatedApts));
     } else {
       try {
-        const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+        let lat = null;
+        let lon = null;
+        if (isChainVal === 0) {
+          const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+          lat = coords.lat;
+          lon = coords.lon;
+        }
         const res = await fetch(`${API_URL}/api/pois`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon })
+          body: JSON.stringify({ name, address, icon: finalIcon, latitude: lat, longitude: lon, is_chain: isChainVal })
         });
         const newPoi = await res.json();
         setPois(prev => [...prev, newPoi]);
@@ -817,12 +825,12 @@ export default function App() {
     }
   };
 
-  // Update POI
-  const handleUpdatePoi = async (id, name, address, icon) => {
+  const handleUpdatePoi = async (id, name, address, icon, isChain) => {
     const finalIcon = icon || '📍';
+    const isChainVal = isChain ? 1 : 0;
     if (isStandalone) {
       const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
-      const updatedPois = pois.map(p => p.id === id ? { ...p, name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon } : p);
+      const updatedPois = pois.map(p => p.id === id ? { ...p, name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon, is_chain: isChainVal } : p);
       setPois(updatedPois);
       localStorage.setItem('vibenest_pois', JSON.stringify(updatedPois));
 
@@ -855,11 +863,17 @@ export default function App() {
       localStorage.setItem('vibenest_apartments', JSON.stringify(updatedApts));
     } else {
       try {
-        const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+        let lat = null;
+        let lon = null;
+        if (isChainVal === 0) {
+          const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+          lat = coords.lat;
+          lon = coords.lon;
+        }
         const res = await fetch(`${API_URL}/api/pois/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon })
+          body: JSON.stringify({ name, address, icon: finalIcon, latitude: lat, longitude: lon, is_chain: isChainVal })
         });
         const updatedPoi = await res.json();
         setPois(prev => prev.map(p => p.id === id ? updatedPoi : p));
@@ -2651,7 +2665,10 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                           key={`chain-badge-${chain}`}
                           onClick={() => {
                             setNewPoiAddress(chain);
-                            if (!newPoiName.trim() || newPoiName === '📍') {
+                            const isDefaultOrEmpty = !newPoiName.trim() || 
+                              newPoiName === newPoiAddress || 
+                              ['H-E-B', 'Walmart', 'Target', 'Trader Joe\'s', 'Whole Foods', 'Costco', 'Starbucks', 'Kroger', '7-Eleven', '📍'].includes(newPoiName);
+                            if (isDefaultOrEmpty) {
                               setNewPoiName(chain);
                               setNewPoiIcon(getDefaultPoiEmoji(chain));
                             }
