@@ -134,6 +134,23 @@ const clientGeocode = async (address, apiKey = null) => {
   return { lat: 30.2672, lon: -97.7431 }; // Default Austin, TX coords
 };
 
+const clientCalculateRoute = async (lon1, lat1, lon2, lat2) => {
+  try {
+    const res = await fetch(`https://router.projectosrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`);
+    const data = await res.json();
+    if (data && data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      const route = data.routes[0];
+      const dist = parseFloat((route.distance / 1609.344).toFixed(2));
+      const normal = Math.round(route.duration / 60) || 1;
+      const rush = Math.round(normal * 1.25) + 4;
+      return { distance_miles: dist, normal_time_mins: normal, rush_hour_time_mins: rush };
+    }
+  } catch (err) {
+    console.error('Client OSRM routing error:', err);
+  }
+  return null;
+};
+
 const loadGoogleMapsScript = (apiKey, callback) => {
   if (window.google && window.google.maps) {
     if (callback) callback();
@@ -726,16 +743,26 @@ export default function App() {
 
       // Calculate commutes to this POI for all apartments client-side
       const updatedApts = await Promise.all(apartments.map(async (apt) => {
-        const dist = calculateHaversineDistance(apt.latitude, apt.longitude, newPoi.latitude, newPoi.longitude);
-        const normal_time = Math.round(dist * 2.5);
-        const rush_hour_time = Math.round(dist * 3.5);
+        let route = await clientCalculateRoute(apt.longitude, apt.latitude, newPoi.longitude, newPoi.latitude);
+        let normal_time, rush_hour_time, dist_miles;
+
+        if (route) {
+          dist_miles = route.distance_miles;
+          normal_time = route.normal_time_mins;
+          rush_hour_time = route.rush_hour_time_mins;
+        } else {
+          const dist = calculateHaversineDistance(apt.latitude, apt.longitude, newPoi.latitude, newPoi.longitude);
+          dist_miles = parseFloat(dist.toFixed(2));
+          normal_time = Math.round(dist * 2.5) || 1;
+          rush_hour_time = Math.round(normal_time * 1.25) + 4;
+        }
         
         const existingDistances = apt.distances || [];
         return {
           ...apt,
           distances: [
             ...existingDistances,
-            { poi_id: newPoi.id, poi_name: name, poi_address: address, normal_time_mins: normal_time, rush_hour_time_mins: rush_hour_time, distance_miles: parseFloat(dist.toFixed(2)) }
+            { poi_id: newPoi.id, poi_name: name, poi_address: address, normal_time_mins: normal_time, rush_hour_time_mins: rush_hour_time, distance_miles: dist_miles }
           ]
         };
       }));
@@ -793,16 +820,26 @@ export default function App() {
 
       // Re-calculate commutes to this POI for all apartments client-side
       const updatedApts = await Promise.all(apartments.map(async (apt) => {
-        const dist = calculateHaversineDistance(apt.latitude, apt.longitude, coords.lat, coords.lon);
-        const normal_time = Math.round(dist * 2.5);
-        const rush_hour_time = Math.round(dist * 3.5);
+        let route = await clientCalculateRoute(apt.longitude, apt.latitude, coords.lon, coords.lat);
+        let normal_time, rush_hour_time, dist_miles;
+
+        if (route) {
+          dist_miles = route.distance_miles;
+          normal_time = route.normal_time_mins;
+          rush_hour_time = route.rush_hour_time_mins;
+        } else {
+          const dist = calculateHaversineDistance(apt.latitude, apt.longitude, coords.lat, coords.lon);
+          dist_miles = parseFloat(dist.toFixed(2));
+          normal_time = Math.round(dist * 2.5) || 1;
+          rush_hour_time = Math.round(normal_time * 1.25) + 4;
+        }
         
         const otherDistances = (apt.distances || []).filter(d => d.poi_id !== id);
         return {
           ...apt,
           distances: [
             ...otherDistances,
-            { poi_id: id, poi_name: name, poi_address: address, normal_time_mins: normal_time, rush_hour_time_mins: rush_hour_time, distance_miles: parseFloat(dist.toFixed(2)) }
+            { poi_id: id, poi_name: name, poi_address: address, normal_time_mins: normal_time, rush_hour_time_mins: rush_hour_time, distance_miles: dist_miles }
           ]
         };
       }));
@@ -1965,6 +2002,11 @@ function ListingsView({
                             </span>
                           </div>
                         ))}
+                        {!settings.GOOGLE_MAPS_API_KEY && (
+                          <span className="text-[9px] text-slate-500 text-right mt-1.5 block leading-none select-none">
+                            * Traffic estimated via OSRM fallback heuristic
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2732,7 +2774,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
       const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
 
       // 2. Generate distances to all POIs
-      const calculatedDistances = pois.map(poi => {
+      const calculatedDistances = await Promise.all(pois.map(async (poi) => {
         const manual = distances[poi.id] || {};
         
         let dMiles = manual.distance_miles ? parseFloat(manual.distance_miles) : null;
@@ -2740,10 +2782,17 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
         let rushTime = manual.rush_hour_time_mins ? parseInt(manual.rush_hour_time_mins) : null;
 
         if (dMiles === null || isNaN(dMiles)) {
-          const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
-          dMiles = parseFloat(dist.toFixed(2));
-          normalTime = Math.round(dist * 2.5);
-          rushTime = Math.round(dist * 3.5);
+          let route = await clientCalculateRoute(coords.lon, coords.lat, poi.longitude, poi.latitude);
+          if (route) {
+            dMiles = route.distance_miles;
+            normalTime = route.normal_time_mins;
+            rushTime = route.rush_hour_time_mins;
+          } else {
+            const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
+            dMiles = parseFloat(dist.toFixed(2));
+            normalTime = Math.round(dist * 2.5) || 1;
+            rushTime = Math.round(normalTime * 1.25) + 4;
+          }
         }
 
         return {
@@ -2754,7 +2803,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
           rush_hour_time_mins: rushTime,
           distance_miles: dMiles
         };
-      });
+      }));
 
       // 3. Map criteria values
       const criteriaList = criteria.map(crit => {
@@ -2997,7 +3046,20 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pois.map(poi => (
                 <div key={`modal-poi-${poi.id}`} className="bg-slate-950/80 p-4 rounded-xl border border-slate-850 space-y-3">
-                  <span className="text-xs font-bold text-slate-300 block">{poi.name} commute</span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-300">{poi.name} commute</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDistanceChange(poi.id, 'normal_time_mins', '');
+                        handleDistanceChange(poi.id, 'rush_hour_time_mins', '');
+                        handleDistanceChange(poi.id, 'distance_miles', '');
+                      }}
+                      className="text-[9px] font-bold text-indigo-400 hover:text-indigo-300 transition duration-150 flex items-center gap-0.5"
+                    >
+                      Reset to Auto
+                    </button>
+                  </div>
                   
                   <div className="grid grid-cols-3 gap-2">
                     <div className="space-y-1">

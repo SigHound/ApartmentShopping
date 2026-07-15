@@ -141,58 +141,74 @@ async function calculateCommute(apartment, poi, apiKey) {
     rush_hour_time_mins: null
   };
 
-  if (!apartment.address || !poi.address) return result;
+  if (!apartment.latitude || !apartment.longitude || !poi.latitude || !poi.longitude) return result;
 
-  // Calculate straight line distance as baseline
+  // 1. Try Google Distance Matrix first if we have a key
+  if (apiKey && apartment.address && poi.address) {
+    try {
+      const times = getNextTuesdayTimestamps();
+      
+      // Fetch Normal driving time (without traffic / standard conditions)
+      const normalRes = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
+        params: {
+          origins: apartment.address,
+          destinations: poi.address,
+          key: apiKey
+        }
+      });
+
+      if (normalRes.data && normalRes.data.rows && normalRes.data.rows[0].elements[0].status === 'OK') {
+        const element = normalRes.data.rows[0].elements[0];
+        result.distance_miles = parseFloat((element.distance.value / 1609.344).toFixed(2));
+        result.normal_time_mins = Math.round(element.duration.value / 60);
+      }
+
+      // Fetch Rush Hour driving time (with traffic predictions for next Tuesday at 8 AM)
+      const rushHourRes = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
+        params: {
+          origins: apartment.address,
+          destinations: poi.address,
+          departure_time: times.rushHour,
+          traffic_model: 'pessimistic', // Pessimistic for rush hour max time
+          key: apiKey
+        }
+      });
+
+      if (rushHourRes.data && rushHourRes.data.rows && rushHourRes.data.rows[0].elements[0].status === 'OK') {
+        const element = rushHourRes.data.rows[0].elements[0];
+        result.rush_hour_time_mins = Math.round((element.duration_in_traffic || element.duration).value / 60);
+      }
+
+      if (result.distance_miles !== null && result.normal_time_mins !== null) {
+        return result; // Successfully got Google values
+      }
+    } catch (error) {
+      console.error(`Google Distance Matrix API error between "${apartment.address}" and "${poi.address}":`, error.message);
+    }
+  }
+
+  // 2. Try OSRM (Open Source Routing Machine) API as fallback for actual road routing
+  try {
+    const osrmUrl = `https://router.projectosrm.org/route/v1/driving/${apartment.longitude},${apartment.latitude};${poi.longitude},${poi.latitude}?overview=false`;
+    const response = await axios.get(osrmUrl);
+    if (response.data && response.data.code === 'Ok' && response.data.routes && response.data.routes.length > 0) {
+      const route = response.data.routes[0];
+      result.distance_miles = parseFloat((route.distance / 1609.344).toFixed(2));
+      result.normal_time_mins = Math.round(route.duration / 60) || 1;
+      // Estimate rush hour using the flat offset + multiplier heuristic (1.25x + 4 mins)
+      result.rush_hour_time_mins = Math.round(result.normal_time_mins * 1.25) + 4;
+      return result;
+    }
+  } catch (err) {
+    console.error('OSM OSRM Routing error:', err.message);
+  }
+
+  // 3. Ultimate fallback: Haversine formula (straight-line distance)
   const straightLineMiles = calculateHaversineDistance(apartment.latitude, apartment.longitude, poi.latitude, poi.longitude);
   if (straightLineMiles) {
     result.distance_miles = parseFloat(straightLineMiles.toFixed(2));
-    // Assume average speed of 30 mph for baseline estimate (normal driving)
     result.normal_time_mins = Math.round((straightLineMiles / 30) * 60) || 1;
-    // Assume average speed of 15 mph for baseline rush hour estimate
-    result.rush_hour_time_mins = Math.round((straightLineMiles / 15) * 60) || 2;
-  }
-
-  if (!apiKey) {
-    return result; // Fallback to straight-line estimates
-  }
-
-  try {
-    const times = getNextTuesdayTimestamps();
-    
-    // 1. Fetch Normal driving time (without traffic / standard conditions)
-    const normalRes = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
-      params: {
-        origins: apartment.address,
-        destinations: poi.address,
-        key: apiKey
-      }
-    });
-
-    if (normalRes.data && normalRes.data.rows && normalRes.data.rows[0].elements[0].status === 'OK') {
-      const element = normalRes.data.rows[0].elements[0];
-      result.distance_miles = parseFloat((element.distance.value / 1609.344).toFixed(2));
-      result.normal_time_mins = Math.round(element.duration.value / 60);
-    }
-
-    // 2. Fetch Rush Hour driving time (with traffic predictions for next Tuesday at 8 AM)
-    const rushHourRes = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
-      params: {
-        origins: apartment.address,
-        destinations: poi.address,
-        departure_time: times.rushHour,
-        traffic_model: 'pessimistic', // Pessimistic for rush hour max time
-        key: apiKey
-      }
-    });
-
-    if (rushHourRes.data && rushHourRes.data.rows && rushHourRes.data.rows[0].elements[0].status === 'OK') {
-      const element = rushHourRes.data.rows[0].elements[0];
-      result.rush_hour_time_mins = Math.round((element.duration_in_traffic || element.duration).value / 60);
-    }
-
-  } catch (error) {
-    console.error(`Google Distance Matrix API error between "${apartment.address}" and "${poi.address}":`, error.message);
+    result.rush_hour_time_mins = Math.round(result.normal_time_mins * 1.25) + 4;
   }
 
   return result;
@@ -514,13 +530,13 @@ app.post('/api/apartments', upload.single('floorplan'), async (req, res) => {
     const parsedCustomDistances = custom_distances ? JSON.parse(custom_distances) : {};
 
     for (const poi of pois) {
-      let commute = { distance_km: null, normal_time_mins: null, rush_hour_time_mins: null };
+      let commute = { distance_miles: null, normal_time_mins: null, rush_hour_time_mins: null };
 
       // If user manually entered it, use that first
       if (parsedCustomDistances[poi.id]) {
         commute.normal_time_mins = parsedCustomDistances[poi.id].normal_time_mins ? parseInt(parsedCustomDistances[poi.id].normal_time_mins) : null;
         commute.rush_hour_time_mins = parsedCustomDistances[poi.id].rush_hour_time_mins ? parseInt(parsedCustomDistances[poi.id].rush_hour_time_mins) : null;
-        commute.distance_km = parsedCustomDistances[poi.id].distance_km ? parseFloat(parsedCustomDistances[poi.id].distance_km) : null;
+        commute.distance_miles = parsedCustomDistances[poi.id].distance_miles ? parseFloat(parsedCustomDistances[poi.id].distance_miles) : null;
       } else {
         // Otherwise, calculate standard geocoded / Google Maps travel times
         commute = await calculateCommute(insertedApartment, poi, apiKey);
