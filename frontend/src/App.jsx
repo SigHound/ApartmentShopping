@@ -6,6 +6,7 @@ import {
   Sliders, 
   Plus, 
   Trash2, 
+  Edit2,
   ExternalLink, 
   FileText, 
   DollarSign, 
@@ -511,10 +512,11 @@ export default function App() {
       localStorage.setItem('vibenest_apartments', JSON.stringify(updatedApts));
     } else {
       try {
+        const coords = await clientGeocode(address);
         const res = await fetch(`${API_URL}/api/pois`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, address, icon: finalIcon })
+          body: JSON.stringify({ name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon })
         });
         const newPoi = await res.json();
         setPois(prev => [...prev, newPoi]);
@@ -545,6 +547,49 @@ export default function App() {
         fetch(`${API_URL}/api/apartments`).then(r => r.json()).then(setApartments);
       } catch (err) {
         console.error('Error deleting POI:', err);
+      }
+    }
+  };
+
+  // Update POI
+  const handleUpdatePoi = async (id, name, address, icon) => {
+    const finalIcon = icon || '📍';
+    if (isStandalone) {
+      const coords = await clientGeocode(address);
+      const updatedPois = pois.map(p => p.id === id ? { ...p, name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon } : p);
+      setPois(updatedPois);
+      localStorage.setItem('vibenest_pois', JSON.stringify(updatedPois));
+
+      // Re-calculate commutes to this POI for all apartments client-side
+      const updatedApts = await Promise.all(apartments.map(async (apt) => {
+        const dist = calculateHaversineDistance(apt.latitude, apt.longitude, coords.lat, coords.lon);
+        const normal_time = Math.round(dist * 2.5);
+        const rush_hour_time = Math.round(dist * 3.5);
+        
+        const otherDistances = (apt.distances || []).filter(d => d.poi_id !== id);
+        return {
+          ...apt,
+          distances: [
+            ...otherDistances,
+            { poi_id: id, poi_name: name, poi_address: address, normal_time_mins: normal_time, rush_hour_time_mins: rush_hour_time, distance_miles: parseFloat(dist.toFixed(2)) }
+          ]
+        };
+      }));
+      setApartments(updatedApts);
+      localStorage.setItem('vibenest_apartments', JSON.stringify(updatedApts));
+    } else {
+      try {
+        const coords = await clientGeocode(address);
+        const res = await fetch(`${API_URL}/api/pois/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, address, icon: finalIcon, latitude: coords.lat, longitude: coords.lon })
+        });
+        const updatedPoi = await res.json();
+        setPois(prev => prev.map(p => p.id === id ? updatedPoi : p));
+        fetch(`${API_URL}/api/apartments`).then(r => r.json()).then(setApartments);
+      } catch (err) {
+        console.error('Error updating POI:', err);
       }
     }
   };
@@ -742,6 +787,7 @@ export default function App() {
                 onSaveApiKey={handleSaveApiKey} 
                 onSaveSetting={handleSaveSetting}
                 onAddPoi={handleAddPoi} 
+                onUpdatePoi={handleUpdatePoi} 
                 onDeletePoi={handleDeletePoi} 
                 onExportData={handleExportData}
                 onImportData={handleImportData}
@@ -1112,24 +1158,26 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                       icon={apartmentMarkerIcon}
                     >
                       <Popup>
-                        <div className="space-y-2 p-1 font-sans w-52 text-slate-100">
-                          <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
-                          <p className="text-[11px] text-slate-400 leading-normal line-clamp-2">{apt.address || 'Address not listed'}</p>
+                        <div className="space-y-2.5 p-1 font-sans w-72 text-slate-100">
+                          <div>
+                            <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
+                            <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 mt-0.5">{apt.address || 'Address not listed'}</p>
+                          </div>
                           
                           {(apt.bedrooms || apt.bathrooms) && (
-                            <div className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                            <div className="text-[10px] text-slate-300 font-bold bg-slate-950/40 border border-slate-800 px-2 py-1 rounded-md flex items-center gap-1.5 w-fit">
                               <span>{apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}</span>
-                              <span>•</span>
+                              <span className="text-slate-600">•</span>
                               <span>{apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}</span>
                             </div>
                           )}
 
                           {apt.floorplan_image && (
-                            <div className="w-full h-20 rounded-lg overflow-hidden border border-slate-800 bg-slate-950 mt-1.5">
+                            <div className="w-full h-36 rounded-lg overflow-hidden border border-slate-850 bg-slate-950 mt-1.5 flex items-center justify-center p-1">
                               <img 
                                 src={`${API_URL}${apt.floorplan_image}`} 
                                 alt="Floorplan preview" 
-                                className="w-full h-full object-cover opacity-80"
+                                className="max-w-full max-h-full object-contain opacity-95 transition hover:scale-105 duration-200"
                               />
                             </div>
                           )}
@@ -1311,7 +1359,7 @@ function ListingsView({
       <div className="glass-card p-6 rounded-2xl space-y-4 relative z-20">
         {/* Row 1: Search Box (Full Width) */}
         <div className="relative w-full">
-          <Search className="absolute left-4 top-4.5 h-4.5 w-4.5 text-slate-400" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-400 pointer-events-none" />
           <input
             type="text"
             placeholder="Search by apartment name or address..."
@@ -1995,15 +2043,18 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
 }
 
 // 4. SETTINGS VIEW (Google Maps API Key, POI Addresses config)
-function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, onDeletePoi, onExportData, onImportData }) {
+function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, onUpdatePoi, onDeletePoi, onExportData, onImportData }) {
   const [apiKeyInput, setApiKeyInput] = useState(settings.GOOGLE_MAPS_API_KEY || '');
   const [newPoiName, setNewPoiName] = useState('');
   const [newPoiAddress, setNewPoiAddress] = useState('');
   const [newPoiIcon, setNewPoiIcon] = useState('📍');
+  const [editingPoiId, setEditingPoiId] = useState(null);
 
   const handlePoiNameChange = (val) => {
     setNewPoiName(val);
-    setNewPoiIcon(getDefaultPoiEmoji(val));
+    if (editingPoiId === null) {
+      setNewPoiIcon(getDefaultPoiEmoji(val));
+    }
   };
 
   const handleApiKeySubmit = (e) => {
@@ -2011,10 +2062,29 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
     onSaveApiKey(apiKeyInput.trim());
   };
 
+  const startEditPoi = (poi) => {
+    setEditingPoiId(poi.id);
+    setNewPoiName(poi.name);
+    setNewPoiAddress(poi.address || '');
+    setNewPoiIcon(poi.icon || '📍');
+  };
+
+  const cancelEditPoi = () => {
+    setEditingPoiId(null);
+    setNewPoiName('');
+    setNewPoiAddress('');
+    setNewPoiIcon('📍');
+  };
+
   const handlePoiSubmit = (e) => {
     e.preventDefault();
     if (!newPoiName.trim()) return;
-    onAddPoi(newPoiName.trim(), newPoiAddress.trim(), newPoiIcon);
+    if (editingPoiId !== null) {
+      onUpdatePoi(editingPoiId, newPoiName.trim(), newPoiAddress.trim(), newPoiIcon);
+      setEditingPoiId(null);
+    } else {
+      onAddPoi(newPoiName.trim(), newPoiAddress.trim(), newPoiIcon);
+    }
     setNewPoiName('');
     setNewPoiAddress('');
     setNewPoiIcon('📍');
@@ -2152,13 +2222,22 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5">{poi.address || 'Manual entries'}</p>
                 </div>
-                <button
-                  onClick={() => onDeletePoi(poi.id)}
-                  className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition"
-                  title="Remove location"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => startEditPoi(poi)}
+                    className="text-slate-500 hover:text-cyan-400 p-1.5 rounded hover:bg-cyan-500/10 transition"
+                    title="Edit location"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => onDeletePoi(poi.id)}
+                    className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition"
+                    title="Remove location"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             ))}
             {pois.length === 0 && <p className="text-xs text-slate-500 italic py-4 text-center">No locations added yet.</p>}
@@ -2166,7 +2245,9 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
 
           {/* Add POI Form */}
           <form onSubmit={handlePoiSubmit} className="space-y-4 pt-4 border-t border-slate-800/80">
-            <h4 className="text-sm font-bold text-slate-300">Add New Location</h4>
+            <h4 className="text-sm font-bold text-slate-300">
+              {editingPoiId !== null ? 'Edit Location' : 'Add New Location'}
+            </h4>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Location Name</label>
@@ -2224,12 +2305,24 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                 Markers will automatically update on the interactive GeoNest map with your selected emoji.
               </p>
             </div>
-            <button
-              type="submit"
-              className="py-2 px-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs transition"
-            >
-              Add Location
-            </button>
+            
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="py-2 px-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs transition"
+              >
+                {editingPoiId !== null ? 'Save Changes' : 'Add Location'}
+              </button>
+              {editingPoiId !== null && (
+                <button
+                  type="button"
+                  onClick={cancelEditPoi}
+                  className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
         </div>
       </div>

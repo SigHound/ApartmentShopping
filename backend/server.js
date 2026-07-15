@@ -221,11 +221,17 @@ function getDefaultPoiEmoji(name = '') {
 }
 
 app.post('/api/pois', async (req, res) => {
-  const { name, address, icon } = req.body;
+  const { name, address, icon, latitude, longitude } = req.body;
   if (!name) return res.status(400).json({ error: 'POI Name is required' });
   const finalIcon = icon || getDefaultPoiEmoji(name);
   try {
-    const { lat, lon } = await geocodeAddress(address);
+    let lat = latitude;
+    let lon = longitude;
+    if (lat === undefined || lon === undefined || lat === null || lon === null) {
+      const geocoded = await geocodeAddress(address);
+      lat = geocoded.lat;
+      lon = geocoded.lon;
+    }
     const result = await db.run("INSERT INTO pois (name, address, latitude, longitude, icon) VALUES (?, ?, ?, ?, ?)", 
       [name, address || '', lat, lon, finalIcon]
     );
@@ -252,17 +258,22 @@ app.post('/api/pois', async (req, res) => {
 
 app.put('/api/pois/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, address, icon } = req.body;
+  const { name, address, icon, latitude, longitude } = req.body;
   try {
     const current = await db.get("SELECT * FROM pois WHERE id = ?", [id]);
     if (!current) return res.status(404).json({ error: 'POI not found' });
 
-    let lat = current.latitude;
-    let lon = current.longitude;
-    if (address !== current.address) {
-      const geocoded = await geocodeAddress(address);
-      lat = geocoded.lat;
-      lon = geocoded.lon;
+    let lat = latitude;
+    let lon = longitude;
+    if (lat === undefined || lon === undefined || lat === null || lon === null) {
+      if (address !== current.address) {
+        const geocoded = await geocodeAddress(address);
+        lat = geocoded.lat;
+        lon = geocoded.lon;
+      } else {
+        lat = current.latitude;
+        lon = current.longitude;
+      }
     }
 
     const finalIcon = icon || current.icon || getDefaultPoiEmoji(name);
@@ -274,7 +285,7 @@ app.put('/api/pois/:id', async (req, res) => {
     const updatedPoi = { id: parseInt(id), name, address, latitude: lat, longitude: lon, icon: finalIcon };
 
     // Update commute times for all apartments to this POI since address changed
-    if (address !== current.address) {
+    if (address !== current.address || lat !== current.latitude || lon !== current.longitude) {
       const apartments = await db.all("SELECT * FROM apartments");
       const apiKey = await getGoogleApiKey();
       for (const apt of apartments) {

@@ -82,7 +82,7 @@
 .leaflet-popup-content {
   margin: 12px 14px !important;
   width: auto !important;
-  min-width: 220px !important;
+  min-width: 300px !important;
 }
 
 .leaflet-popup-tip {
@@ -129,4 +129,11 @@
 
 .beaded-slider-input::-moz-range-thumb:active {
   transform: scale(0.9);
+}
+
+/* Custom POI Map Marker Wrapper overrides for Leaflet */
+.poi-custom-marker-wrapper {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
