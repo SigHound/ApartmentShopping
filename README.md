@@ -68,33 +68,6 @@ docker-compose up --build -d
 *   **Frontend Client**: [http://localhost:8282](http://localhost:8282)
 *   **Backend Server API**: [http://localhost:5252](http://localhost:5252)
 
+
 ### 3. Database Persistence
-Data is saved locally inside a SQLite file in the root workspace folder under `./backend/data/database.sqlite`. Floorplan uploads are stored under `./backend/uploads/`. Both are mounted as persistent volumes inside the docker container, meaning your listings will not be deleted during container rebuilds.
-
-### 4. Stopping Containers
-To stop the local environment, run:
-```bash
-docker-compose down
-```
-
----
-
-## Static Serverless Deployments (GitHub Pages, Vercel, Netlify)
-
-Because VibeNest includes **Standalone Browser Mode**, you can compile the React frontend into static assets and deploy it for free to any web hosting service without running a backend server!
-
-### How to Publish to GitHub Pages:
-1. Create a repository on GitHub (e.g. `https://github.com/your-username/ApartmentShopping`).
-2. Link your local project:
-   ```bash
-   git remote add origin https://github.com/your-username/ApartmentShopping.git
-   git push -u origin main
-   ```
-3. Deploy the frontend branch:
-   ```bash
-   cd frontend
-   npm run deploy
-   ```
-   *(This builds your files and pushes the compiled `dist/` directory to the `gh-pages` branch).*
-4. In your GitHub repository settings, go to **Pages** and set the branch to **`gh-pages`** and save.
-5. Your live app is ready at `https://your-username.github.io/ApartmentShopping/`.
+*   Database data is saved locally in `./backend/data/database.sqlite` and floorplan uploads in `./backend/uploads/` which are mounted as persistent volumes inside the container.
