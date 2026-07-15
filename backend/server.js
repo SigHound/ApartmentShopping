@@ -133,6 +133,94 @@ function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+// Overpass API and Google Places helper to resolve closest chain branch to coordinates
+async function resolveNearestChainBranch(apartment, poi, apiKey) {
+  const aptLat = apartment.latitude;
+  const aptLon = apartment.longitude;
+  if (!aptLat || !aptLon) return null;
+
+  // 1. Try Google Places Text Search if we have a key
+  if (apiKey) {
+    try {
+      const response = await axios.get('https://maps.googleapis.com/maps/api/place/textsearch/json', {
+        params: {
+          query: poi.name,
+          location: `${aptLat},${aptLon}`,
+          radius: 15000,
+          key: apiKey
+        }
+      });
+      if (response.data && response.data.results && response.data.results.length > 0) {
+        const branches = response.data.results.map(r => {
+          const loc = r.geometry.location;
+          const dist = calculateHaversineDistance(aptLat, aptLon, parseFloat(loc.lat), parseFloat(loc.lng));
+          return {
+            name: r.name,
+            address: r.formatted_address || r.vicinity || '',
+            lat: parseFloat(loc.lat),
+            lon: parseFloat(loc.lng),
+            distance: dist
+          };
+        });
+        branches.sort((a, b) => a.distance - b.distance);
+        return branches[0];
+      }
+    } catch (err) {
+      console.error('Google Places TextSearch error for:', poi.name, err.message);
+    }
+  }
+
+  // 2. OpenStreetMap Overpass API fallback
+  try {
+    const query = `[out:json][timeout:15];
+(
+  node["name"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
+  way["name"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
+  node["brand"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
+  way["brand"~"${poi.name}",i](around:15000,${aptLat},${aptLon});
+);
+out center;`;
+
+    const response = await axios.get('https://overpass-api.de/api/interpreter', {
+      params: { data: query },
+      headers: { 'User-Agent': 'VibeNest-ApartmentShopping/1.0' }
+    });
+
+    if (response.data && response.data.elements && response.data.elements.length > 0) {
+      const branches = response.data.elements.map(el => {
+        const lat = el.lat || (el.center && el.center.lat);
+        const lon = el.lon || (el.center && el.center.lon);
+        if (!lat || !lon) return null;
+
+        const tags = el.tags || {};
+        const name = tags.name || tags.brand || poi.name;
+        const street = tags["addr:street"] || "";
+        const housenumber = tags["addr:housenumber"] || "";
+        const city = tags["addr:city"] || "";
+        const address = `${housenumber} ${street} ${city}`.trim() || name;
+
+        const dist = calculateHaversineDistance(aptLat, aptLon, parseFloat(lat), parseFloat(lon));
+        return {
+          name,
+          address,
+          lat: parseFloat(lat),
+          lon: parseFloat(lon),
+          distance: dist
+        };
+      }).filter(Boolean);
+
+      if (branches.length > 0) {
+        branches.sort((a, b) => a.distance - b.distance);
+        return branches[0];
+      }
+    }
+  } catch (err) {
+    console.error('OSM Overpass API error for chain:', poi.name, err.message);
+  }
+
+  return null;
+}
+
 // Helper to calculate commute distance and time for a single apartment and POI
 async function calculateCommute(apartment, poi, apiKey) {
   const result = {
@@ -141,10 +229,42 @@ async function calculateCommute(apartment, poi, apiKey) {
     rush_hour_time_mins: null
   };
 
-  if (!apartment.latitude || !apartment.longitude || !poi.latitude || !poi.longitude) return result;
+  let targetPoi = { ...poi };
+
+  if (poi.is_chain === 1) {
+    try {
+      const cached = await db.get(
+        "SELECT * FROM apartment_chain_branches WHERE apartment_id = ? AND poi_id = ?",
+        [apartment.id, poi.id]
+      );
+      if (cached) {
+        targetPoi.latitude = cached.latitude;
+        targetPoi.longitude = cached.longitude;
+        targetPoi.address = cached.branch_address;
+        targetPoi.name = cached.branch_name;
+      } else {
+        const resolved = await resolveNearestChainBranch(apartment, poi, apiKey);
+        if (resolved) {
+          await db.run(`
+            INSERT INTO apartment_chain_branches (apartment_id, poi_id, branch_name, branch_address, latitude, longitude)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+            [apartment.id, poi.id, resolved.name, resolved.address, resolved.lat, resolved.lon]
+          );
+          targetPoi.latitude = resolved.lat;
+          targetPoi.longitude = resolved.lon;
+          targetPoi.address = resolved.address;
+          targetPoi.name = resolved.name;
+        }
+      }
+    } catch (err) {
+      console.error('Error handling cached chain branches:', err.message);
+    }
+  }
+
+  if (!apartment.latitude || !apartment.longitude || !targetPoi.latitude || !targetPoi.longitude) return result;
 
   // 1. Try Google Distance Matrix first if we have a key
-  if (apiKey && apartment.address && poi.address) {
+  if (apiKey && apartment.address && targetPoi.address) {
     try {
       const times = getNextTuesdayTimestamps();
       
@@ -152,7 +272,7 @@ async function calculateCommute(apartment, poi, apiKey) {
       const normalRes = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
         params: {
           origins: apartment.address,
-          destinations: poi.address,
+          destinations: targetPoi.address,
           key: apiKey
         }
       });
@@ -167,7 +287,7 @@ async function calculateCommute(apartment, poi, apiKey) {
       const rushHourRes = await axios.get('https://maps.googleapis.com/maps/api/distancematrix/json', {
         params: {
           origins: apartment.address,
-          destinations: poi.address,
+          destinations: targetPoi.address,
           departure_time: times.rushHour,
           traffic_model: 'pessimistic', // Pessimistic for rush hour max time
           key: apiKey
@@ -183,13 +303,13 @@ async function calculateCommute(apartment, poi, apiKey) {
         return result; // Successfully got Google values
       }
     } catch (error) {
-      console.error(`Google Distance Matrix API error between "${apartment.address}" and "${poi.address}":`, error.message);
+      console.error(`Google Distance Matrix API error between "${apartment.address}" and "${targetPoi.address}":`, error.message);
     }
   }
 
   // 2. Try OSRM (Open Source Routing Machine) API as fallback for actual road routing
   try {
-    const osrmUrl = `https://router.projectosrm.org/route/v1/driving/${apartment.longitude},${apartment.latitude};${poi.longitude},${poi.latitude}?overview=false`;
+    const osrmUrl = `https://router.projectosrm.org/route/v1/driving/${apartment.longitude},${apartment.latitude};${targetPoi.longitude},${targetPoi.latitude}?overview=false`;
     const response = await axios.get(osrmUrl);
     if (response.data && response.data.code === 'Ok' && response.data.routes && response.data.routes.length > 0) {
       const route = response.data.routes[0];
@@ -204,7 +324,7 @@ async function calculateCommute(apartment, poi, apiKey) {
   }
 
   // 3. Ultimate fallback: Haversine formula (straight-line distance)
-  const straightLineMiles = calculateHaversineDistance(apartment.latitude, apartment.longitude, poi.latitude, poi.longitude);
+  const straightLineMiles = calculateHaversineDistance(apartment.latitude, apartment.longitude, targetPoi.latitude, targetPoi.longitude);
   if (straightLineMiles) {
     result.distance_miles = parseFloat(straightLineMiles.toFixed(2));
     result.normal_time_mins = Math.round((straightLineMiles / 30) * 60) || 1;
@@ -263,22 +383,26 @@ function getDefaultPoiEmoji(name = '') {
 }
 
 app.post('/api/pois', async (req, res) => {
-  const { name, address, icon, latitude, longitude } = req.body;
+  const { name, address, icon, latitude, longitude, is_chain } = req.body;
   if (!name) return res.status(400).json({ error: 'POI Name is required' });
   const finalIcon = icon || getDefaultPoiEmoji(name);
+  const isChainVal = is_chain ? 1 : 0;
   try {
     let lat = latitude;
     let lon = longitude;
-    if (lat === undefined || lon === undefined || lat === null || lon === null) {
+    if (isChainVal === 0 && (lat === undefined || lon === undefined || lat === null || lon === null)) {
       const geocoded = await geocodeAddress(address);
       lat = geocoded.lat;
       lon = geocoded.lon;
+    } else if (isChainVal === 1) {
+      lat = null;
+      lon = null;
     }
-    const result = await db.run("INSERT INTO pois (name, address, latitude, longitude, icon) VALUES (?, ?, ?, ?, ?)", 
-      [name, address || '', lat, lon, finalIcon]
+    const result = await db.run("INSERT INTO pois (name, address, latitude, longitude, icon, is_chain) VALUES (?, ?, ?, ?, ?, ?)", 
+      [name, address || '', lat, lon, finalIcon, isChainVal]
     );
 
-    const newPoi = { id: result.id, name, address, latitude: lat, longitude: lon, icon: finalIcon };
+    const newPoi = { id: result.id, name, address, latitude: lat, longitude: lon, icon: finalIcon, is_chain: isChainVal };
 
     // Trigger commute recalculation for all existing apartments to this new POI
     const apartments = await db.all("SELECT * FROM apartments");
@@ -300,14 +424,15 @@ app.post('/api/pois', async (req, res) => {
 
 app.put('/api/pois/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, address, icon, latitude, longitude } = req.body;
+  const { name, address, icon, latitude, longitude, is_chain } = req.body;
+  const isChainVal = is_chain ? 1 : 0;
   try {
     const current = await db.get("SELECT * FROM pois WHERE id = ?", [id]);
     if (!current) return res.status(404).json({ error: 'POI not found' });
 
     let lat = latitude;
     let lon = longitude;
-    if (lat === undefined || lon === undefined || lat === null || lon === null) {
+    if (isChainVal === 0 && (lat === undefined || lon === undefined || lat === null || lon === null)) {
       if (address !== current.address) {
         const geocoded = await geocodeAddress(address);
         lat = geocoded.lat;
@@ -316,18 +441,26 @@ app.put('/api/pois/:id', async (req, res) => {
         lat = current.latitude;
         lon = current.longitude;
       }
+    } else if (isChainVal === 1) {
+      lat = null;
+      lon = null;
     }
 
     const finalIcon = icon || current.icon || getDefaultPoiEmoji(name);
 
-    await db.run("UPDATE pois SET name = ?, address = ?, latitude = ?, longitude = ?, icon = ? WHERE id = ?",
-      [name, address, lat, lon, finalIcon, id]
+    await db.run("UPDATE pois SET name = ?, address = ?, latitude = ?, longitude = ?, icon = ?, is_chain = ? WHERE id = ?",
+      [name, address, lat, lon, finalIcon, isChainVal, id]
     );
 
-    const updatedPoi = { id: parseInt(id), name, address, latitude: lat, longitude: lon, icon: finalIcon };
+    const updatedPoi = { id: parseInt(id), name, address, latitude: lat, longitude: lon, icon: finalIcon, is_chain: isChainVal };
+
+    // Invalidate cached branches for this POI if name, is_chain, or address changed
+    if (name !== current.name || isChainVal !== current.is_chain || address !== current.address) {
+      await db.run("DELETE FROM apartment_chain_branches WHERE poi_id = ?", [id]);
+    }
 
     // Update commute times for all apartments to this POI since address changed
-    if (address !== current.address || lat !== current.latitude || lon !== current.longitude) {
+    if (address !== current.address || lat !== current.latitude || lon !== current.longitude || isChainVal !== current.is_chain) {
       const apartments = await db.all("SELECT * FROM apartments");
       const apiKey = await getGoogleApiKey();
       for (const apt of apartments) {
@@ -651,6 +784,11 @@ app.put('/api/apartments/:id', upload.single('floorplan'), async (req, res) => {
       bedrooms: bedrooms ? parseInt(bedrooms) : null,
       bathrooms: bathrooms ? parseFloat(bathrooms) : null
     };
+
+    // Invalidate cached chain branch locations if address coordinates changed
+    if (addressChanged || lat !== current.latitude || lon !== current.longitude) {
+      await db.run("DELETE FROM apartment_chain_branches WHERE apartment_id = ?", [id]);
+    }
 
     // Update commute times if address changed or manual commute values provided
     const pois = await db.all("SELECT * FROM pois");

@@ -95,6 +95,7 @@ function initializeDatabase() {
       latitude REAL,
       longitude REAL,
       icon TEXT DEFAULT '📍',
+      is_chain INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 
@@ -111,8 +112,24 @@ function initializeDatabase() {
       FOREIGN KEY (poi_id) REFERENCES pois(id) ON DELETE CASCADE
     )`);
 
+    // Cached branches for chain POIs per apartment
+    db.run(`CREATE TABLE IF NOT EXISTS apartment_chain_branches (
+      apartment_id INTEGER,
+      poi_id INTEGER,
+      branch_name TEXT,
+      branch_address TEXT,
+      latitude REAL,
+      longitude REAL,
+      PRIMARY KEY (apartment_id, poi_id),
+      FOREIGN KEY (apartment_id) REFERENCES apartments(id) ON DELETE CASCADE,
+      FOREIGN KEY (poi_id) REFERENCES pois(id) ON DELETE CASCADE
+    )`);
+
     // Migration for existing databases
     db.run(`ALTER TABLE pois ADD COLUMN icon TEXT DEFAULT '📍';`, (err) => {
+      // Safely ignore error if column already exists
+    });
+    db.run(`ALTER TABLE pois ADD COLUMN is_chain INTEGER DEFAULT 0;`, (err) => {
       // Safely ignore error if column already exists
     });
     db.run(`ALTER TABLE apartment_distances RENAME COLUMN distance_km TO distance_miles;`, (err) => {

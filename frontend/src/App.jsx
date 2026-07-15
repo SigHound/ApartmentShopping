@@ -1534,6 +1534,7 @@ function ListingsView({
   setHoveredFloorplan 
 }) {
   const [expandedApt, setExpandedApt] = useState(null);
+  const [expandedCommutes, setExpandedCommutes] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [viewFormat, setViewFormat] = useState('grid');
   const dropdownRef = useRef(null);
@@ -1984,37 +1985,55 @@ function ListingsView({
                     )}
 
                     {/* Quick Commute details */}
-                    {apt.distances && apt.distances.length > 0 && (
-                      <div className={viewFormat === 'grid' 
-                        ? "space-y-1.5 mb-5 text-xs" 
-                        : "space-y-1.5 text-xs flex-1 flex flex-col justify-center border-t sm:border-t-0 sm:border-l border-slate-800/80 pt-3 sm:pt-0 sm:pl-4"
-                      }>
-                        {apt.distances.slice(0, 2).map(dist => (
-                          <div key={`comm-${apt.id}-${dist.poi_id}`} className="flex justify-between items-center text-slate-300">
-                            <span className="font-semibold text-slate-400 flex items-center gap-1.5">
-                              {dist.poi_name.toLowerCase().includes('work') ? (
-                                <Briefcase className="h-3.5 w-3.5 text-indigo-400" />
-                              ) : (
-                                <ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />
-                              )}
-                              {dist.poi_name}
-                            </span>
-                            <span className="font-mono">
-                              {dist.normal_time_mins ? `${dist.normal_time_mins}m` : '--'} / 
-                              <span className="text-rose-400 font-bold ml-1">
-                                {dist.rush_hour_time_mins ? ` ${dist.rush_hour_time_mins}m` : ' --'}
-                              </span>
-                              {dist.distance_miles ? ` (${dist.distance_miles} mi)` : ''}
-                            </span>
+                    {apt.distances && apt.distances.length > 0 && (() => {
+                      const isCommutesExpanded = !!expandedCommutes[apt.id];
+                      const visibleCommutes = isCommutesExpanded ? apt.distances : apt.distances.slice(0, 2);
+                      return (
+                        <div className={viewFormat === 'grid' 
+                          ? "space-y-1.5 mb-5 text-xs" 
+                          : "space-y-1.5 text-xs flex-1 flex flex-col justify-center border-t sm:border-t-0 sm:border-l border-slate-800/80 pt-3 sm:pt-0 sm:pl-4"
+                        }>
+                          <div className="space-y-1.5">
+                            {visibleCommutes.map(dist => (
+                              <div key={`comm-${apt.id}-${dist.poi_id}`} className="flex justify-between items-center text-slate-300 animate-fade-in">
+                                <span className="font-semibold text-slate-400 flex items-center gap-1.5">
+                                  {dist.poi_name.toLowerCase().includes('work') ? (
+                                    <Briefcase className="h-3.5 w-3.5 text-indigo-400" />
+                                  ) : (
+                                    <ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />
+                                  )}
+                                  {dist.poi_name}
+                                </span>
+                                <span className="font-mono">
+                                  {dist.normal_time_mins ? `${dist.normal_time_mins}m` : '--'} / 
+                                  <span className="text-rose-400 font-bold ml-1">
+                                    {dist.rush_hour_time_mins ? ` ${dist.rush_hour_time_mins}m` : ' --'}
+                                  </span>
+                                  {dist.distance_miles ? ` (${dist.distance_miles} mi)` : ''}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                        {!settings.GOOGLE_MAPS_API_KEY && (
-                          <span className="text-[9px] text-slate-500 text-right mt-1.5 block leading-none select-none">
-                            * Traffic estimated via OSRM fallback heuristic
-                          </span>
-                        )}
-                      </div>
-                    )}
+                          {apt.distances.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedCommutes(prev => ({ ...prev, [apt.id]: !prev[apt.id] }));
+                              }}
+                              className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 transition duration-150 flex items-center gap-0.5 mt-2 self-start select-none bg-slate-900/50 hover:bg-slate-900 border border-slate-850 px-2 py-0.5 rounded-lg"
+                            >
+                              {isCommutesExpanded ? 'Show less commutes' : `+ ${apt.distances.length - 2} more commutes`}
+                            </button>
+                          )}
+                          {!settings.GOOGLE_MAPS_API_KEY && (
+                            <span className="text-[9px] text-slate-500 text-right mt-1.5 block leading-none select-none">
+                              * Traffic estimated via OSRM fallback heuristic
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Expanded block containing specific pros/cons listing */}
@@ -2566,87 +2585,117 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
             {pois.length === 0 && <p className="text-xs text-slate-500 italic py-4 text-center">No locations added yet.</p>}
           </div>
 
-          {/* Add POI Form */}
-          <form onSubmit={handlePoiSubmit} className="space-y-4 pt-4 border-t border-slate-800/80">
-            <h4 className="text-sm font-bold text-slate-300">
-              {editingPoiId !== null ? 'Edit Location' : 'Add New Location'}
-            </h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Location Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Partner Office, Trader Joe's"
-                  value={newPoiName}
-                  onChange={(e) => handlePoiNameChange(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
-                  required
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Full Street Address</label>
-                <input
-                  type="text"
-                  placeholder="123 Main St, Seattle WA"
-                  value={newPoiAddress}
-                  onChange={(e) => setNewPoiAddress(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
-                />
-              </div>
-            </div>
-
-            {/* Custom Emoji Selector */}
-            <div className="space-y-2">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Map Marker Emoji</label>
-              <div className="flex flex-wrap gap-2 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                {['📍', '💼', '🏢', '🏋️', '🛒', '🌳', '☕', '🍴', '🎓', '🏠', '💑', '🏥', '🏖️'].map(emoji => (
-                  <button
-                    type="button"
-                    key={`emoji-select-${emoji}`}
-                    onClick={() => setNewPoiIcon(emoji)}
-                    className={`w-9 h-9 text-lg rounded-lg flex items-center justify-center border transition-all duration-200 ${
-                      newPoiIcon === emoji 
-                        ? 'bg-cyan-600/20 border-cyan-500 scale-110 shadow shadow-cyan-500/30' 
-                        : 'border-slate-850 bg-slate-900/50 hover:bg-slate-900 hover:border-slate-700'
-                    }`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-                
-                {/* Manual emoji input if they want to type one */}
-                <input
-                  type="text"
-                  maxLength="2"
-                  value={newPoiIcon}
-                  onChange={(e) => setNewPoiIcon(e.target.value)}
-                  className="w-12 h-9 px-2 text-center bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-cyan-500 font-bold"
-                  title="Type any custom emoji"
-                />
-              </div>
-              <p className="text-[10px] text-slate-500">
-                Markers will automatically update on the interactive GeoNest map with your selected emoji.
-              </p>
-            </div>
-            
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="py-2 px-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs transition"
-              >
-                {editingPoiId !== null ? 'Save Changes' : 'Add Location'}
-              </button>
-              {editingPoiId !== null && (
+            {editingPoiId === null && (
+              <div className="flex justify-start pt-2">
                 <button
                   type="button"
-                  onClick={cancelEditPoi}
-                  className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+                  onClick={() => setShowAddPoiForm(!showAddPoiForm)}
+                  className="flex items-center gap-1 bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:border-slate-750 text-cyan-400 font-bold px-3 py-1.5 rounded-xl text-xs transition duration-150"
                 >
-                  Cancel
+                  {showAddPoiForm ? 'Cancel Add' : '+ Add New Location'}
                 </button>
-              )}
-            </div>
-          </form>
+              </div>
+            )}
+
+            {(showAddPoiForm || editingPoiId !== null) && (
+              <form onSubmit={handlePoiSubmit} className="space-y-4 pt-4 border-t border-slate-800/80 animate-fade-in">
+                <h4 className="text-sm font-bold text-slate-300">
+                  {editingPoiId !== null ? 'Edit Location' : 'Add New Location'}
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Location Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Partner Office, Trader Joe's"
+                      value={newPoiName}
+                      onChange={(e) => handlePoiNameChange(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">
+                      {newPoiIsChain ? 'Chain Query Term' : 'Full Street Address'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={newPoiIsChain ? "e.g., Walmart, Target, H-E-B" : "123 Main St, Seattle WA"}
+                      value={newPoiAddress}
+                      onChange={(e) => setNewPoiAddress(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
+                      required={newPoiIsChain}
+                    />
+                  </div>
+                </div>
+
+                {/* Chain Toggler */}
+                <div className="flex items-center gap-2 py-1 select-none">
+                  <input
+                    type="checkbox"
+                    id="isChainCheckbox"
+                    checked={newPoiIsChain}
+                    onChange={(e) => setNewPoiIsChain(e.target.checked)}
+                    className="w-4 h-4 accent-cyan-500 rounded border-slate-800 bg-slate-950 focus:ring-0"
+                  />
+                  <label htmlFor="isChainCheckbox" className="text-xs text-slate-300 font-semibold cursor-pointer">
+                    Is this a store/restaurant chain? <span className="text-[10px] text-slate-500 font-normal ml-1">(auto-finds closest branch per apartment)</span>
+                  </label>
+                </div>
+
+                {/* Custom Emoji Selector */}
+                <div className="space-y-2">
+                  <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Map Marker Emoji</label>
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                    {['📍', '💼', '🏢', '🏋️', '🛒', '🌳', '☕', '🍴', '🎓', '🏠', '💑', '🏥', '🏖️'].map(emoji => (
+                      <button
+                        type="button"
+                        key={`emoji-select-${emoji}`}
+                        onClick={() => setNewPoiIcon(emoji)}
+                        className={`w-9 h-9 text-lg rounded-lg flex items-center justify-center border transition-all duration-200 ${
+                          newPoiIcon === emoji 
+                            ? 'bg-cyan-600/20 border-cyan-500 scale-110 shadow shadow-cyan-500/30' 
+                            : 'border-slate-850 bg-slate-900/50 hover:bg-slate-900 hover:border-slate-700'
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                    
+                    {/* Manual emoji input if they want to type one */}
+                    <input
+                      type="text"
+                      maxLength="2"
+                      value={newPoiIcon}
+                      onChange={(e) => setNewPoiIcon(e.target.value)}
+                      className="w-12 h-9 px-2 text-center bg-slate-900 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-cyan-500 font-bold"
+                      title="Type any custom emoji"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Markers will automatically update on the interactive GeoNest map with your selected emoji.
+                  </p>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="py-2 px-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl text-xs transition"
+                  >
+                    {editingPoiId !== null ? 'Save Changes' : 'Add Location'}
+                  </button>
+                  {editingPoiId !== null && (
+                    <button
+                      type="button"
+                      onClick={cancelEditPoi}
+                      className="py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
         </div>
       </div>
 
@@ -2664,6 +2713,112 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
   const [notes, setNotes] = useState(apartment?.notes || '');
   const [bedrooms, setBedrooms] = useState(apartment?.bedrooms || '');
   const [bathrooms, setBathrooms] = useState(apartment?.bathrooms || '');
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [showSuggestionsDropdown, setShowSuggestionsDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowSuggestionsDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  const handleNameChange = async (val) => {
+    setName(val);
+    if (!val.trim() || val.length < 3) {
+      setSuggestions([]);
+      setShowSuggestionsDropdown(false);
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    const apiKey = settings.GOOGLE_MAPS_API_KEY;
+
+    if (apiKey) {
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(val)}&types=geocode|establishment&key=${apiKey}`
+        );
+        const data = await response.json();
+        if (data && data.predictions) {
+          setSuggestions(
+            data.predictions.map((p) => ({
+              label: p.description,
+              place_id: p.place_id,
+              name: p.structured_formatting?.main_text || p.description,
+              isGoogle: true
+            }))
+          );
+          setShowSuggestionsDropdown(true);
+        }
+      } catch (err) {
+        console.error('Google Places Autocomplete error:', err);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    } else {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=5&addressdetails=1`
+        );
+        const data = await response.json();
+        if (data && Array.isArray(data)) {
+          setSuggestions(
+            data.map((item) => ({
+              label: item.display_name,
+              name: item.name || item.display_name.split(',')[0],
+              address: item.display_name,
+              lat: item.lat,
+              lon: item.lon,
+              isGoogle: false
+            }))
+          );
+          setShowSuggestionsDropdown(true);
+        }
+      } catch (err) {
+        console.error('OSM Autocomplete error:', err);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    }
+  };
+
+  const handleSelectSuggestion = async (sug) => {
+    setName(sug.name);
+    setSuggestions([]);
+    setShowSuggestionsDropdown(false);
+
+    if (sug.isGoogle) {
+      const apiKey = settings.GOOGLE_MAPS_API_KEY;
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${sug.place_id}&fields=formatted_address,geometry,rating&key=${apiKey}`
+        );
+        const data = await response.json();
+        if (data && data.result) {
+          const res = data.result;
+          if (res.formatted_address) {
+            setAddress(res.formatted_address);
+          }
+          if (res.rating) {
+            setGoogleReviewScore(res.rating);
+          }
+        }
+      } catch (err) {
+        console.error('Google Places Details fetch error:', err);
+      }
+    } else {
+      if (sug.address) {
+        setAddress(sug.address);
+      }
+    }
+  };
 
   // Inline Attribute creation state
   const [showAddCrit, setShowAddCrit] = useState(false);
@@ -2962,16 +3117,40 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Section 1: Standard Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 relative" ref={dropdownRef}>
               <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Apartment Name *</label>
               <input
                 type="text"
                 placeholder="e.g., Cedar Ridge Apts"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => handleNameChange(e.target.value)}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestionsDropdown(true);
+                }}
                 className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
                 required
+                autoComplete="off"
               />
+              {isLoadingSuggestions && (
+                <div className="absolute right-3 top-9 flex items-center">
+                  <span className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></span>
+                </div>
+              )}
+              {showSuggestionsDropdown && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-16 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 max-h-52 overflow-y-auto divide-y divide-slate-800/60">
+                  {suggestions.map((sug, idx) => (
+                    <button
+                      type="button"
+                      key={`sug-${idx}`}
+                      onClick={() => handleSelectSuggestion(sug)}
+                      className="w-full text-left px-4 py-3 hover:bg-slate-800/80 transition text-xs text-slate-300 flex flex-col gap-0.5"
+                    >
+                      <span className="font-bold text-white text-xs">{sug.name}</span>
+                      <span className="text-[10px] text-slate-500 truncate">{sug.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
