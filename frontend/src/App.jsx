@@ -3124,40 +3124,45 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                           Reset to Auto
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!address) return;
-                            const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
-                            if (!coords) return;
-                            
-                            let route = await clientCalculateRoute(coords.lon, coords.lat, poi.longitude, poi.latitude);
-                            let normalTime, rushTime, dMiles;
-                            if (route) {
-                              dMiles = route.distance_miles;
-                              normalTime = route.normal_time_mins;
-                              rushTime = route.rush_hour_time_mins;
-                            } else {
-                              const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
-                              dMiles = parseFloat(dist.toFixed(2));
-                              normalTime = Math.round(dist * 2.5) || 1;
-                              rushTime = Math.round(normalTime * 1.25) + 4;
-                            }
-                            
-                            setAutoDistances(prev => ({
-                              ...prev,
-                              [poi.id]: {
-                                normal_time_mins: normalTime,
-                                rush_hour_time_mins: rushTime,
-                                distance_miles: dMiles
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-semibold text-slate-500 bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded select-none">
+                            Auto
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!address) return;
+                              const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+                              if (!coords) return;
+                              
+                              let route = await clientCalculateRoute(coords.lon, coords.lat, poi.longitude, poi.latitude);
+                              let normalTime, rushTime, dMiles;
+                              if (route) {
+                                dMiles = route.distance_miles;
+                                normalTime = route.normal_time_mins;
+                                rushTime = route.rush_hour_time_mins;
+                              } else {
+                                const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
+                                dMiles = parseFloat(dist.toFixed(2));
+                                normalTime = Math.round(dist * 2.5) || 1;
+                                rushTime = Math.round(normalTime * 1.25) + 4;
                               }
-                            }));
-                          }}
-                          className="text-[9px] font-bold text-cyan-400 hover:text-cyan-300 transition duration-150 flex items-center gap-0.5"
-                          title="Re-estimate driving times using active maps fallback"
-                        >
-                          Refresh Data
-                        </button>
+                              
+                              setAutoDistances(prev => ({
+                                ...prev,
+                                [poi.id]: {
+                                  normal_time_mins: normalTime,
+                                  rush_hour_time_mins: rushTime,
+                                  distance_miles: dMiles
+                                }
+                              }));
+                            }}
+                            className="text-[9px] font-bold text-cyan-400 hover:text-cyan-300 transition duration-150 flex items-center gap-0.5"
+                            title="Re-estimate driving times using active maps fallback"
+                          >
+                            Refresh Data
+                          </button>
+                        </div>
                       )}
                     </div>
                     
