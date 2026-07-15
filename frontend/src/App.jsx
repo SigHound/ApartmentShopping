@@ -1951,18 +1951,16 @@ function ListingsView({
                     )}
 
                     {/* Bed / Bath count display */}
-                    {(apt.bedrooms || apt.bathrooms) && (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-2 font-medium bg-slate-950/20 px-2.5 py-1 rounded-lg border border-slate-900/60 w-fit">
-                        <Bed className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
-                        <span>
-                          {apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}
-                        </span>
-                        <span className="text-slate-600 font-bold select-none">•</span>
-                        <span>
-                          {apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-2 font-medium bg-slate-950/20 px-2.5 py-1 rounded-lg border border-slate-900/60 w-fit">
+                      <Bed className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+                      <span>
+                        {apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '-- Beds'}
+                      </span>
+                      <span className="text-slate-600 font-bold select-none">•</span>
+                      <span>
+                        {apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '-- Baths'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Scores and Commute Info block */}
@@ -2358,6 +2356,8 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const [newPoiIcon, setNewPoiIcon] = useState('📍');
   const [editingPoiId, setEditingPoiId] = useState(null);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [showAddPoiForm, setShowAddPoiForm] = useState(false);
+  const [newPoiIsChain, setNewPoiIsChain] = useState(false);
 
   const handlePoiNameChange = (val) => {
     setNewPoiName(val);
@@ -2376,6 +2376,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
     setNewPoiName(poi.name);
     setNewPoiAddress(poi.address || '');
     setNewPoiIcon(poi.icon || '📍');
+    setNewPoiIsChain(poi.is_chain === 1);
   };
 
   const cancelEditPoi = () => {
@@ -2383,20 +2384,23 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
     setNewPoiName('');
     setNewPoiAddress('');
     setNewPoiIcon('📍');
+    setNewPoiIsChain(false);
   };
 
   const handlePoiSubmit = (e) => {
     e.preventDefault();
     if (!newPoiName.trim()) return;
     if (editingPoiId !== null) {
-      onUpdatePoi(editingPoiId, newPoiName.trim(), newPoiAddress.trim(), newPoiIcon);
+      onUpdatePoi(editingPoiId, newPoiName.trim(), newPoiAddress.trim(), newPoiIcon, newPoiIsChain);
       setEditingPoiId(null);
     } else {
-      onAddPoi(newPoiName.trim(), newPoiAddress.trim(), newPoiIcon);
+      onAddPoi(newPoiName.trim(), newPoiAddress.trim(), newPoiIcon, newPoiIsChain);
+      setShowAddPoiForm(false);
     }
     setNewPoiName('');
     setNewPoiAddress('');
     setNewPoiIcon('📍');
+    setNewPoiIsChain(false);
   };
 
   return (
@@ -2719,6 +2723,8 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
   const [showSuggestionsDropdown, setShowSuggestionsDropdown] = useState(false);
   const dropdownRef = useRef(null);
 
+  const [coords, setCoords] = useState({ lat: apartment?.latitude || null, lon: apartment?.longitude || null });
+
   useEffect(() => {
     const handleOutsideClick = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -2738,54 +2744,17 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
     }
 
     setIsLoadingSuggestions(true);
-    const apiKey = settings.GOOGLE_MAPS_API_KEY;
-
-    if (apiKey) {
-      try {
-        const response = await fetch(
-          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(val)}&types=geocode|establishment&key=${apiKey}`
-        );
-        const data = await response.json();
-        if (data && data.predictions) {
-          setSuggestions(
-            data.predictions.map((p) => ({
-              label: p.description,
-              place_id: p.place_id,
-              name: p.structured_formatting?.main_text || p.description,
-              isGoogle: true
-            }))
-          );
-          setShowSuggestionsDropdown(true);
-        }
-      } catch (err) {
-        console.error('Google Places Autocomplete error:', err);
-      } finally {
-        setIsLoadingSuggestions(false);
+    try {
+      const response = await fetch(`${API_URL}/api/autocomplete?input=${encodeURIComponent(val)}`);
+      const data = await response.json();
+      if (data && Array.isArray(data)) {
+        setSuggestions(data);
+        setShowSuggestionsDropdown(true);
       }
-    } else {
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=5&addressdetails=1`
-        );
-        const data = await response.json();
-        if (data && Array.isArray(data)) {
-          setSuggestions(
-            data.map((item) => ({
-              label: item.display_name,
-              name: item.name || item.display_name.split(',')[0],
-              address: item.display_name,
-              lat: item.lat,
-              lon: item.lon,
-              isGoogle: false
-            }))
-          );
-          setShowSuggestionsDropdown(true);
-        }
-      } catch (err) {
-        console.error('OSM Autocomplete error:', err);
-      } finally {
-        setIsLoadingSuggestions(false);
-      }
+    } catch (err) {
+      console.error('Autocomplete fetch error:', err);
+    } finally {
+      setIsLoadingSuggestions(false);
     }
   };
 
@@ -2795,27 +2764,29 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
     setShowSuggestionsDropdown(false);
 
     if (sug.isGoogle) {
-      const apiKey = settings.GOOGLE_MAPS_API_KEY;
       try {
-        const response = await fetch(
-          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${sug.place_id}&fields=formatted_address,geometry,rating&key=${apiKey}`
-        );
+        const response = await fetch(`${API_URL}/api/place-details?place_id=${sug.place_id}`);
         const data = await response.json();
-        if (data && data.result) {
-          const res = data.result;
-          if (res.formatted_address) {
-            setAddress(res.formatted_address);
+        if (data) {
+          if (data.formatted_address) {
+            setAddress(data.formatted_address);
           }
-          if (res.rating) {
-            setGoogleReviewScore(res.rating);
+          if (data.rating) {
+            setGoogleReviewScore(data.rating);
+          }
+          if (data.latitude && data.longitude) {
+            setCoords({ lat: data.latitude, lon: data.longitude });
           }
         }
       } catch (err) {
-        console.error('Google Places Details fetch error:', err);
+        console.error('Google Places Details proxy fetch error:', err);
       }
     } else {
       if (sug.address) {
         setAddress(sug.address);
+      }
+      if (sug.lat && sug.lon) {
+        setCoords({ lat: parseFloat(sug.lat), lon: parseFloat(sug.lon) });
       }
     }
   };
@@ -2870,12 +2841,13 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
 
     const timer = setTimeout(async () => {
       try {
-        const coords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
-        if (!coords) return;
+        const geoCoords = await clientGeocode(address, settings.GOOGLE_MAPS_API_KEY);
+        if (!geoCoords) return;
+        setCoords(geoCoords);
         
         const estimates = {};
         await Promise.all(pois.map(async (poi) => {
-          let route = await clientCalculateRoute(coords.lon, coords.lat, poi.longitude, poi.latitude);
+          let route = await clientCalculateRoute(geoCoords.lon, geoCoords.lat, poi.longitude, poi.latitude);
           if (route) {
             estimates[poi.id] = {
               normal_time_mins: route.normal_time_mins,
@@ -2883,7 +2855,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
               distance_miles: route.distance_miles
             };
           } else {
-            const dist = calculateHaversineDistance(coords.lat, coords.lon, poi.latitude, poi.longitude);
+            const dist = calculateHaversineDistance(geoCoords.lat, geoCoords.lon, poi.latitude, poi.longitude);
             const normal = Math.round(dist * 2.5) || 1;
             estimates[poi.id] = {
               normal_time_mins: normal,
@@ -3064,6 +3036,8 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
     formData.append('bedrooms', bedrooms);
     formData.append('bathrooms', bathrooms);
     formData.append('notes', notes);
+    formData.append('latitude', coords.lat !== null && coords.lat !== undefined ? coords.lat : '');
+    formData.append('longitude', coords.lon !== null && coords.lon !== undefined ? coords.lon : '');
     formData.append('criteriaMap', JSON.stringify(criteriaMap));
     formData.append('custom_distances', JSON.stringify(distances));
 
@@ -3205,7 +3179,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Bedrooms</label>
+              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Bedrooms *</label>
               <input
                 type="number"
                 min="0"
@@ -3213,11 +3187,12 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                 value={bedrooms}
                 onChange={(e) => setBedrooms(e.target.value)}
                 className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
+                required
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Bathrooms</label>
+              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Bathrooms *</label>
               <input
                 type="number"
                 step="0.5"
@@ -3226,6 +3201,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                 value={bathrooms}
                 onChange={(e) => setBathrooms(e.target.value)}
                 className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
+                required
               />
             </div>
           </div>

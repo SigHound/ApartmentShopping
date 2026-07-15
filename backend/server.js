@@ -554,6 +554,100 @@ app.delete('/api/criteria/:id', async (req, res) => {
   }
 });
 
+// 3.5. AUTOCOMPLETE PROXY ENDPOINTS
+app.get('/api/autocomplete', async (req, res) => {
+  const { input } = req.query;
+  if (!input || input.trim().length < 3) {
+    return res.json([]);
+  }
+
+  const apiKey = await getGoogleApiKey();
+
+  if (apiKey) {
+    try {
+      const response = await axios.get('https://maps.googleapis.com/maps/api/place/autocomplete/json', {
+        params: {
+          input: input,
+          types: 'geocode|establishment',
+          key: apiKey
+        }
+      });
+      if (response.data && response.data.predictions) {
+        const results = response.data.predictions.map(p => ({
+          label: p.description,
+          place_id: p.place_id,
+          name: p.structured_formatting?.main_text || p.description,
+          isGoogle: true
+        }));
+        return res.json(results);
+      }
+    } catch (err) {
+      console.error('Google Places Autocomplete Proxy Error:', err.message);
+    }
+  }
+
+  // Fallback: Nominatim OpenStreetMap search
+  try {
+    const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+      params: {
+        q: input,
+        format: 'json',
+        limit: 5,
+        addressdetails: 1
+      },
+      headers: {
+        'User-Agent': 'VibeNest-ApartmentShopping/1.0'
+      }
+    });
+    if (response.data && Array.isArray(response.data)) {
+      const results = response.data.map(item => ({
+        label: item.display_name,
+        name: item.name || item.display_name.split(',')[0],
+        address: item.display_name,
+        lat: item.lat,
+        lon: item.lon,
+        isGoogle: false
+      }));
+      return res.json(results);
+    }
+  } catch (err) {
+    console.error('Nominatim Autocomplete Proxy Error:', err.message);
+  }
+
+  res.json([]);
+});
+
+app.get('/api/place-details', async (req, res) => {
+  const { place_id } = req.query;
+  if (!place_id) return res.status(400).json({ error: 'place_id is required' });
+
+  const apiKey = await getGoogleApiKey();
+  if (!apiKey) return res.status(400).json({ error: 'Google API key is not configured' });
+
+  try {
+    const response = await axios.get('https://maps.googleapis.com/maps/api/place/details/json', {
+      params: {
+        place_id: place_id,
+        fields: 'formatted_address,geometry,rating',
+        key: apiKey
+      }
+    });
+    if (response.data && response.data.result) {
+      const resData = response.data.result;
+      return res.json({
+        formatted_address: resData.formatted_address,
+        rating: resData.rating,
+        latitude: resData.geometry?.location?.lat || null,
+        longitude: resData.geometry?.location?.lng || null
+      });
+    }
+  } catch (err) {
+    console.error('Google Place Details Proxy Error:', err.message);
+  }
+
+  res.status(500).json({ error: 'Failed to fetch place details' });
+});
+
 // 4. APARTMENTS
 app.get('/api/apartments', async (req, res) => {
   try {
@@ -598,6 +692,8 @@ app.post('/api/apartments', upload.single('floorplan'), async (req, res) => {
     google_review_score,
     bedrooms,
     bathrooms,
+    latitude,
+    longitude,
     notes,
     criteriaMap, // JSON string of criteria_id -> true/false
     custom_distances // Optional pre-filled manual distances from frontend (JSON string of poi_id -> {normal_time_mins, rush_hour_time_mins, distance_km})
@@ -619,8 +715,15 @@ app.post('/api/apartments', upload.single('floorplan'), async (req, res) => {
   }
 
   try {
-    // 1. Geocode the address
-    const { lat, lon } = await geocodeAddress(address);
+    // 1. Geocode the address if coords not provided
+    let lat = (latitude !== undefined && latitude !== null && latitude !== '') ? parseFloat(latitude) : null;
+    let lon = (longitude !== undefined && longitude !== null && longitude !== '') ? parseFloat(longitude) : null;
+
+    if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
+      const geocoded = await geocodeAddress(address);
+      lat = geocoded.lat;
+      lon = geocoded.lon;
+    }
 
     // 2. Insert the main apartment row
     const result = await db.run(`
@@ -718,6 +821,8 @@ app.put('/api/apartments/:id', upload.single('floorplan'), async (req, res) => {
     google_review_score,
     bedrooms,
     bathrooms,
+    latitude,
+    longitude,
     notes,
     criteriaMap,
     custom_distances
@@ -739,15 +844,16 @@ app.put('/api/apartments/:id', upload.single('floorplan'), async (req, res) => {
       floorplan_image = `/uploads/${filename}`;
     }
 
-    // Geocode if address changed
-    let lat = current.latitude;
-    let lon = current.longitude;
-    let addressChanged = address !== current.address;
+    // Geocode if address changed or if coords are null
+    let lat = (latitude !== undefined && latitude !== null && latitude !== '') ? parseFloat(latitude) : null;
+    let lon = (longitude !== undefined && longitude !== null && longitude !== '') ? parseFloat(longitude) : null;
 
-    if (addressChanged) {
-      const geocoded = await geocodeAddress(address);
-      lat = geocoded.lat;
-      lon = geocoded.lon;
+    if (lat === null || lon === null || isNaN(lat) || isNaN(lon) || address !== current.address) {
+      if (address !== current.address || lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
+        const geocoded = await geocodeAddress(address);
+        lat = geocoded.lat;
+        lon = geocoded.lon;
+      }
     }
 
     await db.run(`
