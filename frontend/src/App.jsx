@@ -74,6 +74,24 @@ const apartmentMarkerIcon = new L.Icon({
   shadowSize: [41, 41]
 });
 
+const createApartmentIcon = (rank) => {
+  return L.divIcon({
+    className: 'custom-apartment-marker',
+    html: `
+      <div style="position: relative; display: flex; align-items: center; justify-content: center; width: 30px; height: 40px;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 30" style="width: 30px; height: 40px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#8b5cf6" stroke="#ffffff" stroke-width="1.5"/>
+          <circle cx="12" cy="9" r="6" fill="#0f172a" />
+        </svg>
+        <span style="position: absolute; top: 4px; font-size: 10px; font-weight: 800; color: #a78bfa; font-family: sans-serif; user-select: none; pointer-events: none;">${rank}</span>
+      </div>
+    `,
+    iconSize: [30, 40],
+    iconAnchor: [15, 40],
+    popupAnchor: [0, -38]
+  });
+};
+
 const createPoiDivIcon = (emoji) => {
   return L.divIcon({
     html: `<div class="flex items-center justify-center bg-slate-900 border-2 border-cyan-400 text-base rounded-full shadow-lg" style="width: 28px; height: 28px; line-height: 1;">${emoji || '📍'}</div>`,
@@ -82,6 +100,14 @@ const createPoiDivIcon = (emoji) => {
     iconAnchor: [14, 14],
     popupAnchor: [0, -14]
   });
+};
+
+const getFloorplanUrl = (imagePath) => {
+  if (!imagePath) return null;
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://') || imagePath.startsWith('data:')) {
+    return imagePath;
+  }
+  return `${API_URL}${imagePath}`;
 };
 
 // Map controller to reset center dynamically
@@ -280,24 +306,32 @@ function GoogleMap({ apiKey, center, zoom, apartments, pois, apiUrl }) {
       markersRef.current = [];
 
       // Add Apartments Markers
-      apartments.forEach(apt => {
+      apartments.forEach((apt, idx) => {
         if (!apt.latitude || !apt.longitude) return;
 
+        const rank = idx + 1;
         const svgMarker = {
-          path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
-          fillColor: "#a78bfa",
+          path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
+          fillColor: "#8b5cf6",
           fillOpacity: 1.0,
           strokeWeight: 1.5,
           strokeColor: "#ffffff",
           scale: 1.5,
-          anchor: new window.google.maps.Point(12, 24)
+          anchor: new window.google.maps.Point(12, 22),
+          labelOrigin: new window.google.maps.Point(12, 9)
         };
 
         const marker = new window.google.maps.Marker({
           position: { lat: apt.latitude, lng: apt.longitude },
           map: map,
           title: apt.name,
-          icon: svgMarker
+          icon: svgMarker,
+          label: {
+            text: String(rank),
+            color: "#ffffff",
+            fontSize: "10px",
+            fontWeight: "bold"
+          }
         });
 
         marker.addListener("click", () => {
@@ -311,7 +345,7 @@ function GoogleMap({ apiKey, center, zoom, apartments, pois, apiUrl }) {
           ` : '';
           const imageHtml = apt.floorplan_image ? `
             <div style="width: 100%; height: 120px; background: #0f172a; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; border-radius: 6px; overflow: hidden; border: 1px solid #cbd5e1;">
-              <img src="${apiUrl}${apt.floorplan_image}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+              <img src="${(apt.floorplan_image.startsWith('http://') || apt.floorplan_image.startsWith('https://') || apt.floorplan_image.startsWith('data:')) ? apt.floorplan_image : `${apiUrl}${apt.floorplan_image}`}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
             </div>
           ` : '';
 
@@ -580,11 +614,17 @@ export default function App() {
         (!priceRange.min || apt.rent >= priceRange.min) &&
         (!priceRange.max || apt.rent <= priceRange.max);
       
-      // Filter by checked criteria constraints (apartment must satisfy ALL checked criteria)
+      // Filter by checked criteria constraints (apartment must satisfy include/exclude criteria)
       const matchesCriteria = Object.keys(selectedCriteriaFilter).every(critId => {
-        if (!selectedCriteriaFilter[critId]) return true;
+        const filterVal = selectedCriteriaFilter[critId];
+        if (!filterVal) return true;
         const aptCrit = apt.criteria?.find(ac => ac.criteria_id === parseInt(critId));
-        return aptCrit && aptCrit.value === 1;
+        if (filterVal === 'include') {
+          return aptCrit && aptCrit.value === 1;
+        } else if (filterVal === 'exclude') {
+          return !aptCrit || aptCrit.value === 0;
+        }
+        return true;
       });
 
       // Filter by rating score min
@@ -1012,24 +1052,25 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col">
-      {settings.DEMO_MODE === '1' && (
-        <div className="bg-gradient-to-r from-cyan-900 via-indigo-950 to-cyan-900 border-b border-cyan-800/80 px-6 py-2.5 flex items-center justify-between text-xs text-cyan-200 select-none shadow-md z-45">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-cyan-400 animate-pulse" />
-            <span>
-              <strong>✨ VibeNest Sandbox Demo active</strong>. Exploring 12 pre-loaded Austin apartments. Criteria weights and workspace database edits are locked.
-            </span>
+      <div className="sticky top-0 z-30 w-full flex flex-col shadow-2xl">
+        {settings.DEMO_MODE === '1' && (
+          <div className="bg-gradient-to-r from-cyan-900 via-indigo-950 to-cyan-900 border-b border-cyan-800/80 px-6 py-2.5 flex items-center justify-between text-xs text-cyan-200 select-none shadow-md">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-cyan-400 animate-pulse" />
+              <span>
+                <strong>✨ VibeNest Sandbox Demo active</strong>. Exploring 12 pre-loaded Austin apartments. Criteria weights and workspace database edits are locked.
+              </span>
+            </div>
+            <button
+              onClick={() => handleSaveSetting('DEMO_MODE', '0')}
+              className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg transition shadow-sm text-[10px]"
+            >
+              Exit Demo Mode
+            </button>
           </div>
-          <button
-            onClick={() => handleSaveSetting('DEMO_MODE', '0')}
-            className="px-3 py-1 bg-cyan-605 hover:bg-cyan-500 text-white font-bold rounded-lg transition shadow-sm text-[10px]"
-          >
-            Exit Demo Mode
-          </button>
-        </div>
-      )}
-      {/* Top Glass Header */}
-      <header className="sticky top-0 z-30 w-full glass-panel px-6 py-4 flex items-center justify-between shadow-2xl">
+        )}
+        {/* Top Glass Header */}
+        <header className="w-full glass-panel px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-gradient-to-br from-primary-500 to-indigo-600 rounded-xl shadow-lg shadow-primary-500/20">
             <Sparkles className="h-6 w-6 text-white animate-pulse" />
@@ -1078,6 +1119,7 @@ export default function App() {
           </button>
         </nav>
       </header>
+      </div>
 
       {/* Main Workspace Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-6 md:p-8 overflow-y-auto">
@@ -1527,47 +1569,50 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                   {/* Apartments markers */}
                   {scoredApartments
                     .filter(a => a.latitude && a.longitude)
-                    .map(apt => (
-                      <Marker 
-                        key={`apt-${apt.id}`} 
-                        position={[apt.latitude, apt.longitude]} 
-                        icon={apartmentMarkerIcon}
-                      >
-                        <Popup>
-                          <div className="space-y-2.5 p-1 font-sans w-72 text-slate-100">
-                            <div>
-                              <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
-                              <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 mt-0.5">{apt.address || 'Address not listed'}</p>
-                            </div>
-                            
-                            {(apt.bedrooms || apt.bathrooms) && (
-                              <div className="text-[10px] text-slate-300 font-bold bg-slate-950/40 border border-slate-800 px-2 py-1 rounded-md flex items-center gap-1.5 w-fit">
-                                <span>{apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}</span>
-                                <span className="text-slate-600">•</span>
-                                <span>{apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}</span>
+                    .map(apt => {
+                      const rank = scoredApartments.findIndex(a => a.id === apt.id) + 1;
+                      return (
+                        <Marker 
+                          key={`apt-${apt.id}`} 
+                          position={[apt.latitude, apt.longitude]} 
+                          icon={createApartmentIcon(rank)}
+                        >
+                          <Popup>
+                            <div className="space-y-2.5 p-1 font-sans w-72 text-slate-100">
+                              <div>
+                                <h4 className="font-bold text-sm text-white truncate" title={apt.name}>{apt.name}</h4>
+                                <p className="text-[11px] text-slate-400 leading-normal line-clamp-2 mt-0.5">{apt.address || 'Address not listed'}</p>
                               </div>
-                            )}
+                              
+                              {(apt.bedrooms || apt.bathrooms) && (
+                                <div className="text-[10px] text-slate-300 font-bold bg-slate-950/40 border border-slate-800 px-2 py-1 rounded-md flex items-center gap-1.5 w-fit">
+                                  <span>{apt.bedrooms ? `${apt.bedrooms} Bed${apt.bedrooms > 1 ? 's' : ''}` : '--'}</span>
+                                  <span className="text-slate-600">•</span>
+                                  <span>{apt.bathrooms ? `${apt.bathrooms} Bath${apt.bathrooms !== 1 ? 's' : ''}` : '--'}</span>
+                                </div>
+                              )}
 
-                            {apt.floorplan_image && (
-                              <div className="w-full h-36 rounded-lg overflow-hidden border border-slate-850 bg-slate-950 mt-1.5 flex items-center justify-center p-1">
-                                <img 
-                                  src={`${API_URL}${apt.floorplan_image}`} 
-                                  alt="Floorplan preview" 
-                                  className="max-w-full max-h-full object-contain opacity-95 transition hover:scale-105 duration-200"
-                                />
+                              {apt.floorplan_image && (
+                                <div className="w-full h-36 rounded-lg overflow-hidden border border-slate-850 bg-slate-950 mt-1.5 flex items-center justify-center p-1">
+                                  <img 
+                                    src={getFloorplanUrl(apt.floorplan_image)} 
+                                    alt="Floorplan preview" 
+                                    className="max-w-full max-h-full object-contain opacity-95 transition hover:scale-105 duration-200"
+                                  />
+                                </div>
+                              )}
+
+                              <div className="flex justify-between items-center gap-4 text-xs font-bold pt-1.5 border-t border-slate-805 mt-2">
+                                <span className="text-emerald-400">${apt.rent ? apt.rent.toLocaleString() : '--'}/mo</span>
+                                <span className="text-primary-400">
+                                  {apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--'}
+                                </span>
                               </div>
-                            )}
-
-                            <div className="flex justify-between items-center gap-4 text-xs font-bold pt-1.5 border-t border-slate-805 mt-2">
-                              <span className="text-emerald-400">${apt.rent ? apt.rent.toLocaleString() : '--'}/mo</span>
-                              <span className="text-primary-400">
-                                {apt.combinedScore !== null ? `${apt.combinedScore}% Match` : '--'}
-                              </span>
                             </div>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    ))}
+                          </Popup>
+                        </Marker>
+                      );
+                    })}
 
                   {/* POIs markers */}
                   {pois
@@ -1633,6 +1678,7 @@ function ListingsView({
   setHoveredFloorplan 
 }) {
   const [expandedApt, setExpandedApt] = useState(null);
+  const [expandAll, setExpandAll] = useState(false);
   const [expandedCommutes, setExpandedCommutes] = useState({});
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [viewFormat, setViewFormat] = useState('grid');
@@ -1673,13 +1719,24 @@ function ListingsView({
   const otherCriteria = sortedCriteria.slice(5);
 
   // Filter out criteria that are set to default to avoid filtering empty lists
-  const activeFilterCount = Object.values(selectedCriteriaFilter).filter(Boolean).length;
+  const activeFilterCount = Object.values(selectedCriteriaFilter).filter(val => val === 'include' || val === 'exclude').length;
 
   const toggleCriteriaFilter = (id) => {
-    setSelectedCriteriaFilter(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
+    setSelectedCriteriaFilter(prev => {
+      const current = prev[id];
+      let next;
+      if (!current) {
+        next = 'include';
+      } else if (current === 'include') {
+        next = 'exclude';
+      } else {
+        next = undefined; // off
+      }
+      return {
+        ...prev,
+        [id]: next
+      };
+    });
   };
 
   const getAttributeFacetCount = (critId) => {
@@ -1697,12 +1754,17 @@ function ListingsView({
       // 3. Match active criteria filters, excluding the target critId itself
       const matchesCriteria = Object.keys(selectedCriteriaFilter).every(filterIdStr => {
         const filterId = parseInt(filterIdStr);
-        const isActive = !!selectedCriteriaFilter[filterId];
+        const filterVal = selectedCriteriaFilter[filterId];
         if (filterId === critId) return true;
-        if (!isActive) return true;
+        if (!filterVal) return true;
         
         const aptCrit = apt.criteria?.find(ac => ac.criteria_id === filterId);
-        return aptCrit && aptCrit.value === 1;
+        if (filterVal === 'include') {
+          return aptCrit && aptCrit.value === 1;
+        } else if (filterVal === 'exclude') {
+          return !aptCrit || aptCrit.value === 0;
+        }
+        return true;
       });
 
       // 4. Rating Filter
@@ -1860,6 +1922,23 @@ function ListingsView({
               </button>
             </div>
 
+            {/* Global Expand Details Toggle */}
+            <div className="flex bg-slate-950/80 border border-slate-800 rounded-xl p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => setExpandAll(!expandAll)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all text-xs font-bold ${
+                  expandAll 
+                    ? 'bg-cyan-600/20 border border-cyan-500/30 text-cyan-400 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Expand details for all apartments"
+              >
+                <ChevronsUpDown className="h-3.5 w-3.5" />
+                <span>{expandAll ? 'Collapse Details' : 'Expand Details'}</span>
+              </button>
+            </div>
+
             <button 
               onClick={onAddClick}
               disabled={settings.DEMO_MODE === '1'}
@@ -1880,20 +1959,35 @@ function ListingsView({
         <div className="border-t border-slate-800/80 pt-4 space-y-2">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Filter by Attributes ({activeFilterCount} active)</p>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Top 5 Criteria */}
             {top5Criteria.map(crit => {
               const facetCount = getAttributeFacetCount(crit.id);
+              const filterState = selectedCriteriaFilter[crit.id];
+              let btnClass = "";
+              let prefixIcon = null;
+
+              if (filterState === 'include') {
+                btnClass = "bg-emerald-600 text-white border-emerald-500 font-semibold shadow-md shadow-emerald-500/20";
+                prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✓</span>;
+              } else if (filterState === 'exclude') {
+                btnClass = "bg-rose-600 text-white border-rose-500 font-semibold shadow-md shadow-rose-500/20";
+                prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✕</span>;
+              } else {
+                if (crit.type === 'pro') {
+                  btnClass = "bg-emerald-950/10 text-emerald-400/70 border-emerald-900/30 hover:border-emerald-600/35 hover:text-emerald-300";
+                } else {
+                  btnClass = "bg-rose-950/10 text-rose-400/70 border-rose-900/30 hover:border-rose-600/35 hover:text-rose-300";
+                }
+              }
+
               return (
                 <button
                   key={`filter-${crit.id}`}
                   onClick={() => toggleCriteriaFilter(crit.id)}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
-                    selectedCriteriaFilter[crit.id]
-                      ? 'bg-primary-600/20 text-primary-300 border-primary-500/50 font-semibold'
-                      : 'bg-slate-950/40 text-slate-400 border-slate-800 hover:border-slate-700'
-                  }`}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-all flex items-center gap-1 ${btnClass}`}
                 >
-                  {crit.name} ({facetCount})
+                  {prefixIcon}
+                  <span>{crit.name}</span>
+                  <span className="text-[10px] font-bold opacity-60 ml-1">({facetCount})</span>
                 </button>
               );
             })}
@@ -1913,25 +2007,36 @@ function ListingsView({
                 {isDropdownOpen && (
                   <div className="absolute left-0 mt-2 bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-2xl z-20 max-h-60 overflow-y-auto space-y-2 w-64 backdrop-blur-xl bg-slate-900/90">
                     <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-1 border-b border-slate-850 pb-1">Additional Criteria</p>
-                    {otherCriteria.map(crit => {
+                     {otherCriteria.map(crit => {
                       const facetCount = getAttributeFacetCount(crit.id);
+                      const filterState = selectedCriteriaFilter[crit.id];
+                      let itemClass = "text-slate-400 hover:text-slate-200 border-slate-800 hover:bg-slate-950/20";
+                      let indicator = "○";
+
+                      if (filterState === 'include') {
+                        itemClass = "text-emerald-400 bg-emerald-950/20 border-emerald-900/40";
+                        indicator = "✓";
+                      } else if (filterState === 'exclude') {
+                        itemClass = "text-rose-400 bg-rose-950/20 border-rose-900/40";
+                        indicator = "✕";
+                      }
+
                       return (
-                        <label
+                        <button
+                          type="button"
                           key={`drop-filter-${crit.id}`}
-                          className="flex items-center gap-2.5 text-xs font-semibold text-slate-300 hover:text-white cursor-pointer py-1.5 px-1 hover:bg-slate-950/40 rounded-lg select-none"
+                          onClick={() => toggleCriteriaFilter(crit.id)}
+                          className={`flex items-center gap-2.5 text-xs font-semibold cursor-pointer py-1.5 px-3 border rounded-lg select-none w-full text-left transition-all ${itemClass}`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={!!selectedCriteriaFilter[crit.id]}
-                            onChange={() => toggleCriteriaFilter(crit.id)}
-                            className="rounded border-slate-800 bg-slate-950 text-primary-600 focus:ring-0 focus:ring-offset-0 cursor-pointer h-3.5 w-3.5"
-                          />
+                          <span className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 font-bold border-slate-700 bg-slate-950 text-[10px]">
+                            {indicator}
+                          </span>
                           <span className="truncate flex-1 pr-2">{crit.name}</span>
-                          <span className="text-[10px] text-slate-500 font-mono font-bold flex-shrink-0">({facetCount})</span>
+                          <span className="text-[10px] opacity-60 font-mono font-bold flex-shrink-0">({facetCount})</span>
                           <span className={`text-[8px] px-1.5 py-0.2 rounded font-bold uppercase ml-2 flex-shrink-0 ${crit.type === 'pro' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
                             {crit.type}
                           </span>
-                        </label>
+                        </button>
                       );
                     })}
                   </div>
@@ -1946,7 +2051,7 @@ function ListingsView({
       {scoredApartments.length > 0 ? (
         <div className={viewFormat === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
           {scoredApartments.map(apt => {
-            const isExpanded = expandedApt === apt.id;
+            const isExpanded = expandAll || (expandedApt === apt.id);
             
             return (
               <div 
@@ -1974,7 +2079,7 @@ function ListingsView({
                       title="Click to edit listing details"
                     >
                       <img 
-                        src={`${API_URL}${apt.floorplan_image}`} 
+                        src={getFloorplanUrl(apt.floorplan_image)} 
                         alt="Floorplan thumbnail" 
                         className="w-full h-full object-cover"
                       />
@@ -3129,7 +3234,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
 
   // File Upload State
   const [floorplanFile, setFloorplanFile] = useState(null);
-  const [floorplanPreview, setFloorplanPreview] = useState(apartment?.floorplan_image ? `${API_URL}${apartment.floorplan_image}` : null);
+  const [floorplanPreview, setFloorplanPreview] = useState(getFloorplanUrl(apartment?.floorplan_image));
   const [floorplanBase64, setFloorplanBase64] = useState('');
 
   // Criteria Selection (Map of crit_id -> boolean)
@@ -3722,8 +3827,13 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
               <h4 className="text-sm font-bold text-slate-200">Select & Weight attributes</h4>
               <button
                 type="button"
+                disabled={isDemoActive}
                 onClick={() => setShowAddCrit(!showAddCrit)}
-                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-primary-400 rounded-lg transition"
+                className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg transition ${
+                  isDemoActive 
+                    ? 'bg-slate-900 text-slate-650 cursor-not-allowed opacity-40' 
+                    : 'bg-slate-800 hover:bg-slate-700 text-primary-400'
+                }`}
               >
                 <Plus className="h-3.5 w-3.5" />
                 {showAddCrit ? 'Cancel' : 'New Attribute'}
