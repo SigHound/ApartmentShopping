@@ -191,6 +191,9 @@ function initializeDatabase() {
       }
     });
 
+    // Seed DEMO_MODE setting if not present
+    db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('DEMO_MODE', '0')");
+
     console.log('Database schema initialization checked.');
   });
 }

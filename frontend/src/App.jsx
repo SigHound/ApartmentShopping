@@ -618,6 +618,7 @@ export default function App() {
 
   // Handle Criteria Weight Updates
   const handleWeightChange = async (criteriaId, who, val) => {
+    if (settings.DEMO_MODE === '1') return;
     const critObj = criteria.find(c => c.id === criteriaId);
     if (!critObj) return;
 
@@ -648,6 +649,7 @@ export default function App() {
 
   // Add new Custom Criteria
   const handleAddCriteria = async (name, type, user_weight, partner_weight) => {
+    if (settings.DEMO_MODE === '1') return null;
     const uw = user_weight !== undefined ? Math.abs(user_weight) : 3;
     const pw = partner_weight !== undefined ? Math.abs(partner_weight) : 3;
 
@@ -695,6 +697,7 @@ export default function App() {
 
   // Delete Criteria
   const handleDeleteCriteria = async (id) => {
+    if (settings.DEMO_MODE === '1') return;
     if (!confirm('Are you sure you want to delete this criterion? It will be removed from all listings.')) return;
     const updatedCriteria = criteria.filter(c => c.id !== id);
     setCriteria(updatedCriteria);
@@ -734,6 +737,10 @@ export default function App() {
           body: JSON.stringify({ key, value: val })
         });
         setSettings(prev => ({ ...prev, [key]: val }));
+        if (key === 'DEMO_MODE') {
+          // Re-fetch datasets to seamlessly transition database scope
+          fetchData();
+        }
         if (key === 'GOOGLE_MAPS_API_KEY') {
           alert('Google Maps API key saved successfully!');
         }
@@ -747,6 +754,7 @@ export default function App() {
 
   // Add Point of Interest (POI)
   const handleAddPoi = async (name, address, icon, isChain) => {
+    if (settings.DEMO_MODE === '1') return;
     const finalIcon = icon || '📍';
     const isChainVal = isChain ? 1 : 0;
     if (isStandalone) {
@@ -818,6 +826,7 @@ export default function App() {
 
   // Delete POI
   const handleDeletePoi = async (id) => {
+    if (settings.DEMO_MODE === '1') return;
     if (!confirm('Are you sure you want to delete this location? Commutes to this location will be removed.')) return;
     const updatedPois = pois.filter(p => p.id !== id);
     setPois(updatedPois);
@@ -841,6 +850,7 @@ export default function App() {
   };
 
   const handleReorderPois = async (orderedPois) => {
+    if (settings.DEMO_MODE === '1') return;
     setPois(orderedPois);
     if (isStandalone) {
       localStorage.setItem('vibenest_pois', JSON.stringify(orderedPois));
@@ -863,6 +873,7 @@ export default function App() {
   };
 
   const handleUpdatePoi = async (id, name, address, icon, isChain) => {
+    if (settings.DEMO_MODE === '1') return;
     const finalIcon = icon || '📍';
     const isChainVal = isChain ? 1 : 0;
     if (isStandalone) {
@@ -998,6 +1009,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col">
+      {settings.DEMO_MODE === '1' && (
+        <div className="bg-gradient-to-r from-cyan-900 via-indigo-950 to-cyan-900 border-b border-cyan-800/80 px-6 py-2.5 flex items-center justify-between text-xs text-cyan-200 select-none shadow-md z-45">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-cyan-400 animate-pulse" />
+            <span>
+              <strong>✨ VibeNest Sandbox Demo active</strong>. Exploring 12 pre-loaded Austin apartments. Criteria weights and workspace database edits are locked.
+            </span>
+          </div>
+          <button
+            onClick={() => handleSaveSetting('DEMO_MODE', '0')}
+            className="px-3 py-1 bg-cyan-605 hover:bg-cyan-500 text-white font-bold rounded-lg transition shadow-sm text-[10px]"
+          >
+            Exit Demo Mode
+          </button>
+        </div>
+      )}
       {/* Top Glass Header */}
       <header className="sticky top-0 z-30 w-full glass-panel px-6 py-4 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-3">
@@ -1187,7 +1214,7 @@ const getDefaultPoiEmoji = (name = '') => {
 };
 
 // Reusable premium discrete BeadedSlider component
-function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary' }) {
+function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary', disabled = false }) {
   const steps = [];
   for (let i = min; i <= max; i++) {
     steps.push(i);
@@ -1205,7 +1232,11 @@ function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary
       
       {/* Active Fill Track */}
       <div 
-        className={`absolute left-0 h-1 rounded-full pointer-events-none ${accentColor}`}
+        className={`absolute left-0 h-1 rounded-full pointer-events-none ${
+          disabled 
+            ? (colorClass === 'primary' ? 'bg-primary-800 text-primary-800' : 'bg-pink-800 text-pink-800') 
+            : (colorClass === 'primary' ? 'bg-primary-500 text-primary-500' : 'bg-pink-500 text-pink-500')
+        }`}
         style={{ width: `${percentage}%` }}
       ></div>
 
@@ -1217,7 +1248,9 @@ function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary
             <span 
               key={val} 
               className={`w-1.5 h-1.5 rounded-full -translate-y-[1px] transition-all duration-200 ${
-                isActive ? `${bgLightColor} ring-[3px] ${ringColor} scale-110` : 'bg-slate-700'
+                isActive 
+                  ? `${bgLightColor} ring-[3px] ${ringColor} scale-110 ${disabled ? 'opacity-40' : ''}` 
+                  : 'bg-slate-700'
               }`}
             ></span>
           );
@@ -1230,8 +1263,11 @@ function BeadedSlider({ value, onChange, min = 1, max = 5, colorClass = 'primary
         min={min}
         max={max}
         value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
-        className={`absolute inset-0 w-full h-full appearance-none bg-transparent cursor-ew-resize focus:outline-none z-10 beaded-slider-input ${accentColor}`}
+        disabled={disabled}
+        onChange={(e) => !disabled && onChange(parseInt(e.target.value))}
+        className={`absolute inset-0 w-full h-full appearance-none bg-transparent ${
+          disabled ? 'cursor-not-allowed opacity-30' : 'cursor-ew-resize'
+        } focus:outline-none z-10 beaded-slider-input`}
         style={{ WebkitAppearance: 'none' }}
       />
     </div>
@@ -1823,10 +1859,16 @@ function ListingsView({
 
             <button 
               onClick={onAddClick}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-bold rounded-xl shadow-md transition"
+              disabled={settings.DEMO_MODE === '1'}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold rounded-xl shadow-md transition ${
+                settings.DEMO_MODE === '1'
+                  ? 'bg-slate-900 text-slate-650 cursor-not-allowed opacity-50'
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
+              title={settings.DEMO_MODE === '1' ? "Locked in Demo Mode" : "Add new apartment listing"}
             >
               <Plus className="h-4 w-4" />
-              Add Listing
+              {settings.DEMO_MODE === '1' ? 'Add Listing (Locked)' : 'Add Listing'}
             </button>
           </div>
         </div>
@@ -2164,14 +2206,25 @@ function ListingsView({
                       )}
                       <button
                         onClick={() => onEdit(apt)}
-                        className="text-xs font-bold px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition"
+                        disabled={settings.DEMO_MODE === '1'}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition ${
+                          settings.DEMO_MODE === '1'
+                            ? 'bg-slate-900 text-slate-650 cursor-not-allowed opacity-30'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                        }`}
+                        title={settings.DEMO_MODE === '1' ? "Locked in Demo Mode" : "Edit listing"}
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => onDelete(apt.id)}
-                        className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition"
-                        title="Delete listing"
+                        disabled={settings.DEMO_MODE === '1'}
+                        className={`p-1.5 rounded-lg transition ${
+                          settings.DEMO_MODE === '1'
+                            ? 'text-slate-650 cursor-not-allowed opacity-30'
+                            : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+                        }`}
+                        title={settings.DEMO_MODE === '1' ? "Locked in Demo Mode" : "Delete listing"}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -2280,16 +2333,21 @@ function CriteriaView({ criteria, settings = {}, onWeightChange, onAddCriteria, 
       {/* Settings / Create Criteria - right side */}
       <div className="lg:col-span-4 space-y-6">
         <div className="glass-card p-6 rounded-2xl">
-          <h3 className="text-base font-bold text-white mb-4">Add Custom Criterion</h3>
+          <h3 className="text-base font-bold text-white mb-4">
+            Add Custom Criterion {isDemoActive && <span className="text-xs text-amber-500 lowercase">(locked)</span>}
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Criterion Name</label>
               <input
                 type="text"
-                placeholder="e.g., Balcony, Quiet bedroom"
+                placeholder={isDemoActive ? "Unavailable in Demo Mode" : "e.g., Balcony, Quiet bedroom"}
                 value={newCritName}
+                disabled={isDemoActive}
                 onChange={(e) => setNewCritName(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
+                className={`w-full px-3 py-2.5 bg-slate-950 border rounded-xl focus:border-primary-500 focus:outline-none text-sm ${
+                  isDemoActive ? 'border-slate-900 text-slate-600 cursor-not-allowed' : 'border-slate-800 text-slate-200'
+                }`}
                 required
               />
             </div>
@@ -2299,22 +2357,28 @@ function CriteriaView({ criteria, settings = {}, onWeightChange, onAddCriteria, 
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
+                  disabled={isDemoActive}
                   onClick={() => setNewCritType('pro')}
                   className={`py-2 text-xs font-bold rounded-lg border transition ${
-                    newCritType === 'pro'
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
-                      : 'bg-slate-950 text-slate-400 border-slate-800'
+                    isDemoActive 
+                      ? 'bg-slate-950 text-slate-805 border-slate-900 cursor-not-allowed opacity-30'
+                      : newCritType === 'pro'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
                   }`}
                 >
                   Pro (Desirable)
                 </button>
                 <button
                   type="button"
+                  disabled={isDemoActive}
                   onClick={() => setNewCritType('con')}
                   className={`py-2 text-xs font-bold rounded-lg border transition ${
-                    newCritType === 'con'
-                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/50'
-                      : 'bg-slate-950 text-slate-400 border-slate-800'
+                    isDemoActive 
+                      ? 'bg-slate-950 text-slate-805 border-slate-900 cursor-not-allowed opacity-30'
+                      : newCritType === 'con'
+                        ? 'bg-rose-500/20 text-rose-400 border-rose-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-800'
                   }`}
                 >
                   Con (Penalty)
@@ -2324,7 +2388,12 @@ function CriteriaView({ criteria, settings = {}, onWeightChange, onAddCriteria, 
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs transition"
+              disabled={isDemoActive}
+              className={`w-full py-2.5 font-bold rounded-xl text-xs transition ${
+                isDemoActive 
+                  ? 'bg-slate-900 text-slate-650 cursor-not-allowed' 
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
             >
               Add Criterion
             </button>
@@ -2338,6 +2407,7 @@ function CriteriaView({ criteria, settings = {}, onWeightChange, onAddCriteria, 
 
 // Single Criteria Config line with dual sliders (Me / Partner)
 function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, settings = {} }) {
+  const isDemoActive = settings.DEMO_MODE === '1';
   return (
     <div className="py-2 space-y-4">
       <div className="flex justify-between items-center">
@@ -2351,8 +2421,13 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
         </div>
         <button
           onClick={() => onDelete(item.id)}
-          className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition"
-          title="Delete criterion"
+          disabled={isDemoActive}
+          className={`p-1.5 rounded transition ${
+            isDemoActive 
+              ? 'text-slate-650 cursor-not-allowed opacity-30' 
+              : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'
+          }`}
+          title={isDemoActive ? "Delete locked in Demo" : "Delete criterion"}
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -2377,6 +2452,7 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
             min={minVal}
             max={maxVal}
             colorClass="primary"
+            disabled={isDemoActive}
           />
         </div>
 
@@ -2398,6 +2474,7 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
               min={minVal}
               max={maxVal}
               colorClass="pink"
+              disabled={isDemoActive}
             />
           </div>
         )}
@@ -2418,6 +2495,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   const [newPoiIsChain, setNewPoiIsChain] = useState(false);
 
   const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const handleDragStart = (e, index) => {
     setDraggedIndex(index);
@@ -2426,10 +2504,18 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
 
   const handleDragOver = (e, index) => {
     e.preventDefault();
+    if (index !== dragOverIndex) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
   };
 
   const handleDrop = (e, index) => {
     e.preventDefault();
+    setDragOverIndex(null);
     if (draggedIndex === null || draggedIndex === index) return;
     
     const updated = [...pois];
@@ -2440,6 +2526,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const handleMovePoi = (index, direction) => {
@@ -2536,6 +2623,50 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
           </div>
         </div>
 
+  const isDemoActive = settings.DEMO_MODE === '1';
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4">
+      {/* Left panel - Sandbox Demo & Google API Key setup */}
+      <div className="space-y-6">
+        {/* Sandbox Demo Mode Card */}
+        <div className="glass-card p-6 rounded-2xl space-y-4 border border-cyan-500/20 bg-cyan-950/5">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-cyan-400" />
+            VibeNest Sandbox Demo Mode
+          </h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Quickly explore VibeNest with built-in, pre-populated comparative datasets in Austin, Texas.
+          </p>
+
+          <div className="bg-amber-950/20 border border-amber-900/60 p-4 rounded-xl space-y-2">
+            <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+              ⚠️ Safety Reassurance
+            </span>
+            <p className="text-[11px] text-amber-300 leading-relaxed">
+              Activating Demo Mode swaps the interface to a pre-populated sandbox of 12 Austin listings and 4 preset POIs. <strong>Your actual workspace listings, criteria, and settings are completely safe</strong> and preserved in your local SQLite database. Toggling Demo Mode off restores your active workspace instantly.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-850 rounded-xl">
+            <div className="space-y-0.5">
+              <span className="text-xs font-bold text-slate-200">Enable Sandbox Demo</span>
+              <p className="text-[10px] text-slate-500">Loads mock Austin comparative datasets</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer select-none">
+              <input 
+                type="checkbox" 
+                checked={isDemoActive} 
+                onChange={(e) => {
+                  onSaveSetting('DEMO_MODE', e.target.checked ? '1' : '0');
+                }}
+                className="sr-only peer" 
+              />
+              <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600 peer-checked:after:bg-white"></div>
+            </label>
+          </div>
+        </div>
+
         <div className="glass-card p-6 rounded-2xl space-y-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Compass className="h-5 w-5 text-indigo-400" />
@@ -2589,18 +2720,28 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
 
           <form onSubmit={handleApiKeySubmit} className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Google Maps API Key</label>
+              <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">
+                Google Maps API Key {isDemoActive && <span className="text-[10px] text-amber-500 lowercase">(locked in demo)</span>}
+              </label>
               <input
                 type="password"
-                placeholder="AIzaSy..."
+                placeholder={isDemoActive ? "Unavailable in Demo Mode" : "AIzaSy..."}
                 value={apiKeyInput}
+                disabled={isDemoActive}
                 onChange={(e) => setApiKeyInput(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200"
+                className={`w-full px-3 py-2.5 bg-slate-950 border rounded-xl focus:border-primary-500 focus:outline-none text-sm ${
+                  isDemoActive ? 'border-slate-900 text-slate-600 cursor-not-allowed' : 'border-slate-800 text-slate-200'
+                }`}
               />
             </div>
             <button
               type="submit"
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs transition"
+              disabled={isDemoActive}
+              className={`px-4 py-2 font-bold rounded-xl text-xs transition ${
+                isDemoActive 
+                  ? 'bg-slate-900 text-slate-650 cursor-not-allowed' 
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
+              }`}
             >
               Save API Key
             </button>
@@ -2620,18 +2761,28 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
           <div className="flex gap-4">
             <button
               onClick={onExportData}
-              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition"
+              disabled={isDemoActive}
+              className={`flex items-center gap-2 px-4 py-2.5 font-bold rounded-xl text-xs transition ${
+                isDemoActive 
+                  ? 'bg-slate-900 text-slate-650 cursor-not-allowed' 
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              }`}
             >
               <Download className="h-4 w-4" />
               Export JSON
             </button>
 
-            <label className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs cursor-pointer transition">
+            <label className={`flex items-center gap-2 px-4 py-2.5 font-bold rounded-xl text-xs transition ${
+              isDemoActive 
+                ? 'bg-slate-900 text-slate-650 cursor-not-allowed' 
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer'
+            }`}>
               <Upload className="h-4 w-4" />
               Import JSON
               <input
                 type="file"
                 accept=".json"
+                disabled={isDemoActive}
                 onChange={onImportData}
                 className="hidden"
               />
@@ -2656,21 +2807,30 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
             {pois.map((poi, index) => (
               <div 
                 key={`poi-row-${poi.id}`} 
-                draggable
+                draggable={!isDemoActive}
                 onDragStart={(e) => handleDragStart(e, index)}
                 onDragOver={(e) => handleDragOver(e, index)}
+                onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, index)}
                 onDragEnd={handleDragEnd}
-                className={`flex items-center justify-between pt-3 first:pt-0 pb-1.5 transition-all duration-200 ${
+                className={`flex items-center justify-between pt-3 first:pt-0 pb-1.5 transition-all duration-150 ${
                   draggedIndex === index 
-                    ? 'opacity-40 border-b border-dashed border-cyan-500 bg-cyan-950/10' 
-                    : 'hover:bg-slate-900/20'
+                    ? 'opacity-30 bg-cyan-950/20 border border-dashed border-cyan-500/50 rounded-xl px-2' 
+                    : dragOverIndex === index
+                      ? draggedIndex < index
+                        ? 'border-b-4 border-cyan-500 bg-cyan-950/30 scale-[1.01] rounded-b-xl px-2'
+                        : 'border-t-4 border-cyan-500 bg-cyan-950/30 scale-[1.01] rounded-t-xl px-2'
+                      : 'hover:bg-slate-900/30 rounded-xl px-2'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div 
-                    className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 p-1 flex items-center justify-center select-none"
-                    title="Drag to reorder"
+                    className={`p-1 flex items-center justify-center select-none transition ${
+                      isDemoActive 
+                        ? 'cursor-not-allowed text-slate-800 opacity-20' 
+                        : 'cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400'
+                    }`}
+                    title={isDemoActive ? "Sorting locked in Demo" : "Drag to reorder"}
                   >
                     <GripVertical className="h-4 w-4" />
                   </div>
@@ -2686,7 +2846,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                   <button
                     type="button"
                     onClick={() => handleMovePoi(index, 'up')}
-                    disabled={index === 0}
+                    disabled={index === 0 || isDemoActive}
                     className="text-slate-500 hover:text-cyan-455 p-1 rounded hover:bg-slate-800 transition disabled:opacity-30 disabled:hover:text-slate-500"
                     title="Move Up"
                   >
@@ -2695,23 +2855,33 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
                   <button
                     type="button"
                     onClick={() => handleMovePoi(index, 'down')}
-                    disabled={index === pois.length - 1}
+                    disabled={index === pois.length - 1 || isDemoActive}
                     className="text-slate-500 hover:text-cyan-455 p-1 rounded hover:bg-slate-800 transition disabled:opacity-30 disabled:hover:text-slate-500"
                     title="Move Down"
                   >
                     <ArrowDown className="h-3.5 w-3.5" />
                   </button>
                   <button
+                    disabled={isDemoActive}
                     onClick={() => startEditPoi(poi)}
-                    className="text-slate-500 hover:text-cyan-400 p-1.5 rounded hover:bg-cyan-500/10 transition"
-                    title="Edit location"
+                    className={`p-1.5 rounded transition ${
+                      isDemoActive 
+                        ? 'text-slate-600 cursor-not-allowed opacity-30' 
+                        : 'text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10'
+                    }`}
+                    title={isDemoActive ? "Edits locked in Demo" : "Edit location"}
                   >
                     <Edit2 className="h-4 w-4" />
                   </button>
                   <button
+                    disabled={isDemoActive}
                     onClick={() => onDeletePoi(poi.id)}
-                    className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-500/10 transition"
-                    title="Remove location"
+                    className={`p-1.5 rounded transition ${
+                      isDemoActive 
+                        ? 'text-slate-600 cursor-not-allowed opacity-30' 
+                        : 'text-slate-500 hover:text-rose-400 hover:bg-rose-500/10'
+                    }`}
+                    title={isDemoActive ? "Edits locked in Demo" : "Remove location"}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -2868,6 +3038,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
 
 // 5. APARTMENT ENTRY & EDIT MODAL
 function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone, onWeightChange, onAddCriteria, onClose, onSave }) {
+  const isDemoActive = settings.DEMO_MODE === '1';
   const [name, setName] = useState(apartment?.name || '');
   const [address, setAddress] = useState(apartment?.address || '');
   const [rent, setRent] = useState(apartment?.rent || '');
@@ -3675,6 +3846,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                           min={1}
                           max={5}
                           colorClass="primary"
+                          disabled={isDemoActive}
                         />
                       </div>
                       {settings.SHOPPING_MODE !== 'single' && (
@@ -3691,6 +3863,7 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
                             min={1}
                             max={5}
                             colorClass="pink"
+                            disabled={isDemoActive}
                           />
                         </div>
                       )}
@@ -3706,15 +3879,23 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
             <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">General notes</label>
             <textarea
               rows="3"
-              placeholder="Pros: great light in living room, quiet patio. Cons: small walk-in closet..."
+              placeholder={isDemoActive ? "Notes are locked in Demo Mode" : "Pros: great light in living room, quiet patio. Cons: small walk-in closet..."}
               value={notes}
+              disabled={isDemoActive}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-primary-500 focus:outline-none text-sm text-slate-200 leading-normal"
+              className={`w-full px-3 py-2.5 bg-slate-950 border rounded-xl focus:border-primary-500 focus:outline-none text-sm leading-normal ${
+                isDemoActive ? 'border-slate-900 text-slate-600 cursor-not-allowed' : 'border-slate-800 text-slate-200'
+              }`}
             ></textarea>
           </div>
 
           {/* Modal Actions */}
           <div className="border-t border-slate-800 pt-4 flex justify-end gap-3">
+            {isDemoActive && (
+              <span className="text-xs text-amber-500 font-semibold self-center mr-auto">
+                🔒 Edits are disabled in Demo Mode
+              </span>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -3724,9 +3905,14 @@ function ApartmentModal({ apartment, pois, criteria, settings = {}, isStandalone
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition shadow-lg shadow-primary-500/20"
+              disabled={isDemoActive}
+              className={`px-5 py-2.5 font-bold rounded-xl text-xs transition shadow-lg ${
+                isDemoActive 
+                  ? 'bg-slate-900 text-slate-650 cursor-not-allowed shadow-none' 
+                  : 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-500/20'
+              }`}
             >
-              {apartment ? 'Save Changes' : 'Create Listing'}
+              {isDemoActive ? 'Locked' : (apartment ? 'Save Changes' : 'Create Listing')}
             </button>
           </div>
         </form>

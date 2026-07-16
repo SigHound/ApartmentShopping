@@ -7,12 +7,29 @@ const axios = require('axios');
 require('dotenv').config();
 
 const db = require('./database');
+const demoData = require('./demoData');
 
 const app = express();
 const PORT = process.env.PORT || 5252;
 
 app.use(cors());
 app.use(express.json());
+
+// Global protection middleware for Demo Mode
+app.use(async (req, res, next) => {
+  const method = req.method;
+  const path = req.path;
+  if (['POST', 'PUT', 'DELETE'].includes(method)) {
+    // Exception for toggling demo mode itself
+    if (path === '/api/settings' && req.body && req.body.key === 'DEMO_MODE') {
+      return next();
+    }
+    if (await isDemoActive()) {
+      return res.status(403).json({ error: 'Edits are disabled in Demo Mode.' });
+    }
+  }
+  next();
+});
 
 // Set up image upload directory
 const uploadsDir = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
@@ -43,6 +60,16 @@ async function getGoogleApiKey() {
   } catch (error) {
     console.error('Error fetching API key from database:', error);
     return null;
+  }
+}
+
+async function isDemoActive() {
+  try {
+    const row = await db.get("SELECT value FROM settings WHERE key = ?", ['DEMO_MODE']);
+    return row && row.value === '1';
+  } catch (error) {
+    console.error('Error fetching DEMO_MODE setting:', error);
+    return false;
   }
 }
 
@@ -354,6 +381,9 @@ app.post('/api/settings', async (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'Key is required' });
   try {
+    if (key !== 'DEMO_MODE' && await isDemoActive()) {
+      return res.status(403).json({ error: 'Edits are disabled in Demo Mode.' });
+    }
     await db.run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, value]);
     res.json({ success: true, key, value });
   } catch (err) {
@@ -364,6 +394,9 @@ app.post('/api/settings', async (req, res) => {
 // 2. POIs (Points of Interest)
 app.get('/api/pois', async (req, res) => {
   try {
+    if (await isDemoActive()) {
+      return res.json(demoData.demoPois);
+    }
     const pois = await db.all("SELECT * FROM pois ORDER BY display_order ASC, name ASC");
     res.json(pois);
   } catch (err) {
@@ -508,6 +541,9 @@ app.put('/api/pois/reorder', async (req, res) => {
 // 3. CRITERIA & WEIGHTS
 app.get('/api/criteria', async (req, res) => {
   try {
+    if (await isDemoActive()) {
+      return res.json(demoData.demoCriteria);
+    }
     const rows = await db.all(`
       SELECT c.*, w.user_weight, w.partner_weight 
       FROM criteria c
@@ -667,6 +703,45 @@ app.get('/api/place-details', async (req, res) => {
 // 4. APARTMENTS
 app.get('/api/apartments', async (req, res) => {
   try {
+    if (await isDemoActive()) {
+      const enriched = demoData.demoApartments.map(apt => {
+        const distances = Object.keys(apt.commutes).map(poiId => {
+          const poi = demoData.demoPois.find(p => p.id === parseInt(poiId));
+          return {
+            apartment_id: apt.id,
+            poi_id: parseInt(poiId),
+            normal_time_mins: apt.commutes[poiId].normal,
+            rush_hour_time_mins: apt.commutes[poiId].traffic,
+            distance_miles: apt.commutes[poiId].dist,
+            is_manual: 0,
+            poi_name: poi ? poi.name : '',
+            poi_address: poi ? poi.address : '',
+            poi_icon: poi ? poi.icon : '📍',
+            poi_is_chain: poi ? poi.is_chain : 0
+          };
+        });
+
+        const criteriaMatches = demoData.demoCriteria.map(c => {
+          return {
+            criteria_id: c.id,
+            value: apt.criteriaValues[c.id] || 0,
+            name: c.name,
+            type: c.type,
+            user_weight: c.user_weight,
+            partner_weight: c.partner_weight
+          };
+        });
+
+        const { commutes, criteriaValues, ...rest } = apt;
+        return {
+          ...rest,
+          distances,
+          criteria: criteriaMatches
+        };
+      });
+      return res.json(enriched);
+    }
+
     const apartments = await db.all("SELECT * FROM apartments ORDER BY created_at DESC");
     
     // For each apartment, fetch distances and criteria matches
