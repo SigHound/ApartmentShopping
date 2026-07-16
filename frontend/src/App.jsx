@@ -256,9 +256,12 @@ function GoogleMap({ apiKey, center, zoom, apartments, pois, apiUrl }) {
     loadGoogleMapsScript(apiKey, () => {
       if (!containerRef.current) return;
 
+      const lat = Array.isArray(center) ? center[0] : (center?.lat || 37.7749);
+      const lng = Array.isArray(center) ? center[1] : (center?.lon || center?.lng || -122.4194);
+
       if (!mapRef.current) {
         mapRef.current = new window.google.maps.Map(containerRef.current, {
-          center: { lat: center.lat, lng: center.lon },
+          center: { lat: lat, lng: lng },
           zoom: zoom || 12,
           styles: GOOGLE_MAPS_DARK_STYLE,
           mapTypeControl: false,
@@ -267,7 +270,7 @@ function GoogleMap({ apiKey, center, zoom, apartments, pois, apiUrl }) {
         });
         infoWindowRef.current = new window.google.maps.InfoWindow();
       } else {
-        mapRef.current.setCenter({ lat: center.lat, lng: center.lon });
+        mapRef.current.setCenter({ lat: lat, lng: lng });
       }
 
       const map = mapRef.current;
@@ -1500,7 +1503,7 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
               GeoNest Mapping
             </h3>
             <div className="flex-1 w-full rounded-xl overflow-hidden border border-slate-800">
-              {settings.GOOGLE_MAPS_API_KEY ? (
+              {settings.GOOGLE_MAPS_API_KEY && settings.DEMO_MODE !== '1' ? (
                 <GoogleMap
                   apiKey={settings.GOOGLE_MAPS_API_KEY}
                   center={mapCenter}
@@ -2257,6 +2260,7 @@ function ListingsView({
 
 // 3. CRITERIA & WEIGHTS SLIDERS VIEW (Dual Slider weights configuration)
 function CriteriaView({ criteria, settings = {}, onWeightChange, onAddCriteria, onDeleteCriteria }) {
+  const isDemoActive = settings.DEMO_MODE === '1';
   const [newCritName, setNewCritName] = useState('');
   const [newCritType, setNewCritType] = useState('pro');
 
