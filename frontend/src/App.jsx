@@ -2485,6 +2485,7 @@ function CriteriaWeightItem({ item, onWeightChange, onDelete, minVal, maxVal, se
 
 // 4. SETTINGS VIEW (Google Maps API Key, POI Addresses config)
 function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, onUpdatePoi, onDeletePoi, onReorderPois, onExportData, onImportData }) {
+  const isDemoActive = settings.DEMO_MODE === '1';
   const [apiKeyInput, setApiKeyInput] = useState(settings.GOOGLE_MAPS_API_KEY || '');
   const [newPoiName, setNewPoiName] = useState('');
   const [newPoiAddress, setNewPoiAddress] = useState('');
@@ -2587,47 +2588,7 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
       
-      {/* Left panel - API configuration & General Preferences */}
-      <div className="space-y-6">
-        {/* General Preferences */}
-        <div className="glass-card p-6 rounded-2xl space-y-4">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <Sliders className="h-5 w-5 text-primary-400" />
-            General Preferences
-          </h3>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Configure how VibeNest scores and displays comparisons.
-          </p>
-
-          <div className="space-y-3">
-            <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Shopping Mode</label>
-            <div className="flex bg-slate-950/85 border border-slate-800 rounded-xl p-1 gap-1">
-              <button
-                type="button"
-                onClick={() => onSaveSetting('SHOPPING_MODE', 'single')}
-                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition duration-200 ${settings.SHOPPING_MODE === 'single' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                Individual (Single)
-              </button>
-              <button
-                type="button"
-                onClick={() => onSaveSetting('SHOPPING_MODE', 'couple')}
-                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition duration-200 ${settings.SHOPPING_MODE !== 'single' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}
-              >
-                Shared (with Partner)
-              </button>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-1 leading-normal">
-              Selecting "Individual (Single)" simplifies the interface by hiding the partner's score columns, weights, and comparative graphs.
-            </p>
-          </div>
-        </div>
-
-  const isDemoActive = settings.DEMO_MODE === '1';
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4">
-      {/* Left panel - Sandbox Demo & Google API Key setup */}
+      {/* Left panel - Sandbox Demo, API configuration & General Preferences */}
       <div className="space-y-6">
         {/* Sandbox Demo Mode Card */}
         <div className="glass-card p-6 rounded-2xl space-y-4 border border-cyan-500/20 bg-cyan-950/5">
@@ -2664,6 +2625,40 @@ function SettingsView({ settings, pois, onSaveApiKey, onSaveSetting, onAddPoi, o
               />
               <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600 peer-checked:after:bg-white"></div>
             </label>
+          </div>
+        </div>
+
+        {/* General Preferences */}
+        <div className="glass-card p-6 rounded-2xl space-y-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Sliders className="h-5 w-5 text-primary-400" />
+            General Preferences
+          </h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Configure how VibeNest scores and displays comparisons.
+          </p>
+
+          <div className="space-y-3">
+            <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Shopping Mode</label>
+            <div className="flex bg-slate-950/85 border border-slate-800 rounded-xl p-1 gap-1">
+              <button
+                type="button"
+                onClick={() => onSaveSetting('SHOPPING_MODE', 'single')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition duration-200 ${settings.SHOPPING_MODE === 'single' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Individual (Single)
+              </button>
+              <button
+                type="button"
+                onClick={() => onSaveSetting('SHOPPING_MODE', 'couple')}
+                className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition duration-200 ${settings.SHOPPING_MODE !== 'single' ? 'bg-primary-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}
+              >
+                Shared (with Partner)
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1 leading-normal">
+              Selecting "Individual (Single)" simplifies the interface by hiding the partner's score columns, weights, and comparative graphs.
+            </p>
           </div>
         </div>
 
