@@ -1573,7 +1573,7 @@ function DashboardView({ scoredApartments, pois, criteria, settings = {}, onNavi
                       const rank = scoredApartments.findIndex(a => a.id === apt.id) + 1;
                       return (
                         <Marker 
-                          key={`apt-${apt.id}`} 
+                          key={`apt-${apt.id}-${rank}`} 
                           position={[apt.latitude, apt.longitude]} 
                           icon={createApartmentIcon(rank)}
                         >
@@ -1966,11 +1966,21 @@ function ListingsView({
               let prefixIcon = null;
 
               if (filterState === 'include') {
-                btnClass = "bg-emerald-600 text-white border-emerald-500 font-semibold shadow-md shadow-emerald-500/20";
-                prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✓</span>;
+                if (crit.type === 'pro') {
+                  btnClass = "bg-emerald-600 text-white border-emerald-500 font-semibold shadow-md shadow-emerald-500/20";
+                  prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✓</span>;
+                } else {
+                  btnClass = "bg-amber-600 text-white border-amber-500 font-semibold shadow-md shadow-amber-500/20";
+                  prefixIcon = <span className="mr-1 text-[10px] font-extrabold">⚠</span>;
+                }
               } else if (filterState === 'exclude') {
-                btnClass = "bg-rose-600 text-white border-rose-500 font-semibold shadow-md shadow-rose-500/20";
-                prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✕</span>;
+                if (crit.type === 'pro') {
+                  btnClass = "bg-rose-600 text-white border-rose-500 font-semibold shadow-md shadow-rose-500/20";
+                  prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✕</span>;
+                } else {
+                  btnClass = "bg-rose-700 text-white border-rose-600 font-semibold shadow-md shadow-rose-700/20";
+                  prefixIcon = <span className="mr-1 text-[10px] font-extrabold">✕</span>;
+                }
               } else {
                 if (crit.type === 'pro') {
                   btnClass = "bg-emerald-950/10 text-emerald-400/70 border-emerald-900/30 hover:border-emerald-600/35 hover:text-emerald-300";
@@ -2014,11 +2024,21 @@ function ListingsView({
                       let indicator = "○";
 
                       if (filterState === 'include') {
-                        itemClass = "text-emerald-400 bg-emerald-950/20 border-emerald-900/40";
-                        indicator = "✓";
+                        if (crit.type === 'pro') {
+                          itemClass = "text-emerald-400 bg-emerald-950/20 border-emerald-900/40";
+                          indicator = "✓";
+                        } else {
+                          itemClass = "text-amber-400 bg-amber-950/20 border-amber-900/40";
+                          indicator = "⚠";
+                        }
                       } else if (filterState === 'exclude') {
-                        itemClass = "text-rose-400 bg-rose-950/20 border-rose-900/40";
-                        indicator = "✕";
+                        if (crit.type === 'pro') {
+                          itemClass = "text-rose-400 bg-rose-950/20 border-rose-900/40";
+                          indicator = "✕";
+                        } else {
+                          itemClass = "text-rose-500 bg-rose-950/30 border-rose-900/50";
+                          indicator = "✕";
+                        }
                       }
 
                       return (

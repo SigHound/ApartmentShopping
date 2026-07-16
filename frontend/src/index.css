@@ -137,3 +137,9 @@
   border: none !important;
   box-shadow: none !important;
 }
+
+.custom-apartment-marker {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
